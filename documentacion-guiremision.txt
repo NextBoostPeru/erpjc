@@ -1,0 +1,209 @@
+OPERACIÓN: GENERAR GRE REMITENTE
+
+La explicación de la estructura y las validaciones de esta operación para ENVIAR y de RESPUESTA se detallan al final de este manual.
+
+JSON PARA ENVIAR A NUBEFACT
+
+operacion: generar_guia
+tipo_de_comprobante: 7
+serie: TTT1
+numero: 1
+cliente_tipo_de_documento: 6
+cliente_numero_de_documento: 20600695771
+cliente_denominacion: NUBEFACT SA
+cliente_direccion: MIRAFLORES LIMA
+cliente_email: demo@gmail.com
+
+cliente_email_1:
+cliente_email_2:
+fecha_de_emision: 18-12-2022
+observaciones: observaciones
+motivo_de_traslado: 01
+peso_bruto_total: 1
+peso_bruto_unidad_de_medida: KGM
+numero_de_bultos: 1
+tipo_de_transporte: 01
+fecha_de_inicio_de_traslado: 21-12-2022
+transportista_documento_tipo: 6
+transportista_documento_numero: 20600695771
+transportista_denominacion: NUBEFACT SA
+transportista_placa_numero: ABC444
+conductor_documento_tipo: 1
+conductor_documento_numero: XXXXXXXX
+conductor_nombre: JORGE
+conductor_apellidos: LOPEZ
+conductor_numero_licencia: QXXXXXXXX
+punto_de_partida_ubigeo: 151021
+punto_de_partida_direccion: DIRECCION PARTIDA
+punto_de_partida_codigo_establecimiento_sunat: 0000
+punto_de_llegada_ubigeo: 211101
+punto_de_llegada_direccion: DIRECCION LLEGADA
+punto_de_llegada_codigo_establecimiento_sunat: 0000
+enviar_automaticamente_al_cliente: false
+formato_de_pdf:
+
+ITEMS
+unidad_de_medida: NIU
+codigo: 001
+descripcion: DETALLE DEL PRODUCTO 1
+cantidad: 1
+
+unidad_de_medida: NIU
+codigo: 002
+descripcion: DETALLE DEL PRODUCTO 2
+cantidad: 1
+
+DOCUMENTO RELACIONADO
+tipo: 01
+serie: F001
+numero: 1
+
+tipo: 01
+serie: F001
+numero: 2
+
+VEHÍCULOS SECUNDARIOS
+placa_numero: ABC445
+placa_numero: ABC446
+
+CONDUCTORES SECUNDARIOS
+documento_tipo: 1
+documento_numero: 06123457
+nombre: LUIS
+apellidos: FERNANDEZ
+numero_licencia: QXXXXXXXZ
+
+documento_tipo: 1
+documento_numero: 06123458
+nombre: JORGE
+apellidos: QUISPE
+numero_licencia: QXXXXXXAZ
+
+JSON DE RESPUESTA DE NUBEFACT (GRE REMITENTE)
+
+nota_importante: Para generar el PDF en las Guías de Remisión se requiere que la Sunat la acepte primero.
+tipo_de_comprobante: 7
+serie: TTT1
+numero: 1
+enlace:
+aceptada_por_sunat: false
+sunat_description: null
+sunat_note: null
+sunat_responsecode: null
+sunat_soap_error: null
+pdf_zip_base64:
+xml_zip_base64:
+cdr_zip_base64:
+cadena_para_codigo_qr:
+enlace_del_pdf:
+enlace_del_xml:
+enlace_del_cdr:
+
+OPERACIÓN: GENERAR GRE TRANSPORTISTA
+
+JSON PARA ENVIAR A NUBEFACT
+
+operacion: generar_guia
+tipo_de_comprobante: 8
+serie: VVV1
+numero: 1
+cliente_tipo_de_documento: 6
+cliente_numero_de_documento: 20600695771
+cliente_denominacion: NUBEFACT SA
+cliente_direccion: MIRAFLORES LIMA
+cliente_email: demo@gmail.com
+
+fecha_de_emision: 18-12-2022
+observaciones: observaciones
+peso_bruto_total: 1
+peso_bruto_unidad_de_medida: KGM
+fecha_de_inicio_de_traslado: 21-12-2022
+transportista_placa_numero: ABC444
+conductor_documento_tipo: 7
+conductor_documento_numero: XXXXXXXX
+conductor_nombre: JORGE
+conductor_apellidos: LOPEZ
+conductor_numero_licencia: QXXXXXXXX
+
+DESTINATARIO
+destinatario_documento_tipo: 7
+destinatario_documento_numero: 87654321
+destinatario_denominacion: DESTINATARIO
+
+PUNTOS
+punto_de_partida_ubigeo: 151021
+punto_de_partida_direccion: DIRECCION PARTIDA
+punto_de_llegada_ubigeo: 211101
+punto_de_llegada_direccion: DIRECCION LLEGADA
+
+ITEMS
+unidad_de_medida: NIU
+codigo: 001
+descripcion: DETALLE DEL PRODUCTO 1
+cantidad: 1
+
+unidad_de_medida: NIU
+codigo: 002
+descripcion: DETALLE DEL PRODUCTO 2
+cantidad: 1
+
+VEHÍCULOS SECUNDARIOS
+placa_numero: ABC445
+tuc: ABC321981R
+
+placa_numero: ABC446
+tuc: ABC321981S
+
+CONDUCTORES SECUNDARIOS
+documento_tipo: 1
+documento_numero: 06123457
+nombre: LUIS
+apellidos: FERNANDEZ
+numero_licencia: QXXXXXXXZ
+
+documento_tipo: 1
+documento_numero: 06123458
+nombre: JORGE
+apellidos: QUISPE
+numero_licencia: QXXXXXXAZ
+
+JSON DE RESPUESTA DE NUBEFACT (GRE TRANSPORTISTA)
+
+tipo_de_comprobante: 8
+serie: VVV1
+numero: 1
+enlace:
+aceptada_por_sunat: false
+sunat_description: null
+sunat_note: null
+sunat_responsecode: null
+sunat_soap_error: null
+pdf_zip_base64:
+xml_zip_base64:
+cdr_zip_base64:
+cadena_para_codigo_qr:
+enlace_del_pdf:
+enlace_del_xml:
+enlace_del_cdr:
+
+OPERACIÓN: CONSULTAR GRE REMITENTE O TRANSPORTISTA
+
+JSON PARA ENVIAR A NUBEFACT
+
+operacion: consultar_guia
+tipo_de_comprobante: 7
+serie: TTT1
+numero: 1
+
+JSON DE RESPUESTA DE NUBEFACT
+
+tipo_de_comprobante: 7
+serie: TTT1
+numero: 1
+enlace: http://www.nubefact.com/guia/xxxxx
+
+aceptada_por_sunat: true
+cadena_para_codigo_qr: enlace_qr
+enlace_del_pdf: enlace_pdf
+enlace_del_xml: enlace_xml
+enlace_del_cdr: enlace_cdr

@@ -1,0 +1,15 @@
+2026-01-22 18:34:51 - Action: listar
+Token: eyJ0eXAiOi...
+Auth Header: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjkxMjQ4NzgsImV4cCI6MTc2OTEyODQ3OCwiZGF0YSI6eyJpZCI6IjUiLCJ1c3VhcmlvIjoidmVuZGVkb3IiLCJyb2xfaWQiOiI1Iiwicm9sX25vbWJyZSI6InZlbnRhcyJ9fQ.M4W2qHVa0uCCACGCN1-_NJ5A-anObmc_8hk56tKFGFc
+UserData: VALID
+
+2026-01-22 18:34:52 - Action: listar
+Token: eyJ0eXAiOi...
+Auth Header: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjkxMjQ4NzgsImV4cCI6MTc2OTEyODQ3OCwiZGF0YSI6eyJpZCI6IjUiLCJ1c3VhcmlvIjoidmVuZGVkb3IiLCJyb2xfaWQiOiI1Iiwicm9sX25vbWJyZSI6InZlbnRhcyJ9fQ.M4W2qHVa0uCCACGCN1-_NJ5A-anObmc_8hk56tKFGFc
+UserData: VALID
+
+2026-02-26 00:26:15 - Action: none
+Token: MISSING
+Auth Header: NOT FOUND
+UserData: INVALID
+

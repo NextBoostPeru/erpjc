@@ -1,0 +1,3 @@
+{"id":"log_6972b919aaee52.88066029","usuario_id":999,"usuario_nombre":"TestUser_1769126169","accion":"POST","modulo":"TEST_ENDPOINT","descripcion":"Consulta a \/api\/test_endpoint.php","ip_address":"127.0.0.1","fecha":"2026-01-23 00:56:09"}
+{"id":"log_6973e028c8bb78.56256273","usuario_id":1,"usuario_nombre":"admin","accion":"POST","modulo":"API","descripcion":"Consulta a Unknown","ip_address":"127.0.0.1","fecha":"2026-01-23 15:55:04"}
+{"id":"log_6973e0fa763528.95683187","usuario_id":1,"usuario_nombre":"admin","accion":"POST","modulo":"API","descripcion":"Consulta a Unknown","ip_address":"127.0.0.1","fecha":"2026-01-23 15:58:34"}

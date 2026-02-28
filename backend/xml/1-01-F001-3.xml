@@ -1,0 +1,62 @@
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'>
+                <UBLVersionID>2.1</UBLVersionID>
+                <CustomizationID>2.0</CustomizationID>
+                <ID>F001-3</ID>
+                <IssueDate>2026-01-04</IssueDate>
+                <IssueTime>17:24:39</IssueTime>
+                <Note languageLocaleID='1000'>118</Note>
+                <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+                <Signature>
+                    <ID>IDSignKG</ID>
+                    <SignatoryParty>
+                        <PartyIdentification>
+                            <ID>20100000001</ID>
+                        </PartyIdentification>
+                        <PartyName>
+                            <Name>EMPRESA DEMO S.A.</Name>
+                        </PartyName>
+                    </SignatoryParty>
+                    <DigitalSignatureAttachment>
+                        <ExternalReference>
+                            <URI>#SignatureKG</URI>
+                        </ExternalReference>
+                    </DigitalSignatureAttachment>
+                </Signature>
+                <AccountingSupplierParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20100000001</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>EMPRESA DEMO S.A.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingSupplierParty>
+                <AccountingCustomerParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20602771629</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>A.N. DESIGN IN GLASS E.I.R.L.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingCustomerParty>
+                <TaxTotal>
+                    <TaxAmount currencyID='PEN'>18</TaxAmount>
+                    <TaxSubtotal>
+                        <TaxableAmount currencyID='PEN'>100</TaxableAmount>
+                        <TaxAmount currencyID='PEN'>18</TaxAmount>
+                        <TaxCategory>
+                            <TaxScheme>
+                                <ID>1000</ID>
+                                <Name>IGV</Name>
+                                <TaxTypeCode>VAT</TaxTypeCode>
+                            </TaxScheme>
+                        </TaxCategory>
+                    </TaxSubtotal>
+                </TaxTotal>
+                <LegalMonetaryTotal>
+                    <PayableAmount currencyID='PEN'>118</PayableAmount>
+                </LegalMonetaryTotal>
+            </Invoice>

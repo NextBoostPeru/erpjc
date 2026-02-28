@@ -1,0 +1,422 @@
+API NUBEFACT - RETENCIÓN
+BETA
+IMPORTANTE:
+Se envía a la misma ruta con el mismo token.
+OPERACIÓN 1: GENERAR COMPROBANTE DE RETENCIÓN CON JSON
+La explicación de la estructura y las validaciones de esta operación para ENVIAR y de RESPUESTA se detallan al final de este manual:
+JSON PARA ENVIAR A NUBEFACT
+JSON DE RESPUESTA DE NUBEFACT
+{
+	"operacion": "generar_retencion",
+	"serie": "RRR1",
+	"numero": "1",
+	"cliente_tipo_de_documento": 6,
+	"cliente_numero_de_documento": "20131312955",
+	"cliente_denominacion": "SUNAT",
+	"cliente_direccion": "LIMA",
+	"cliente_email": "",
+	"cliente_email_1": "",
+	"cliente_email_2": "",
+	"fecha_de_emision": "26-10-2021",
+	"moneda": "1",
+	"tipo_de_tasa_de_retencion": "1",
+	"total_retenido": "45",
+	"total_pagado": "1455.00",
+	"observaciones": "",
+	"enviar_automaticamente_a_la_sunat": "true",
+	"enviar_automaticamente_al_cliente": "false",
+	"codigo_unico": "",
+	"formato_de_pdf": "",
+	"items": [
+		{
+			"documento_relacionado_tipo": "01",
+			"documento_relacionado_serie": "F001",
+			"documento_relacionado_numero": "1",
+			"documento_relacionado_fecha_de_emision": "26-10-2021",
+			"documento_relacionado_moneda": "1",
+			"documento_relacionado_total": "1000",
+			"pago_fecha": "26-10-2021",
+			"pago_numero": "1",
+			"pago_total_sin_retencion": "1000",
+			"tipo_de_cambio": "4",
+			"tipo_de_cambio_fecha": "26-10-2021",
+			"importe_retenido": "30",
+			"importe_retenido_fecha": "26-10-2021",
+			"importe_pagado_con_retencion": "970"
+		},
+		{
+			"documento_relacionado_tipo": "01",
+			"documento_relacionado_serie": "F001",
+			"documento_relacionado_numero": "2",
+			"documento_relacionado_fecha_de_emision": "26-10-2021",
+			"documento_relacionado_moneda": "1",
+			"documento_relacionado_total": "500",
+			"pago_fecha": "26-10-2021",
+			"pago_numero": "1",
+			"pago_total_sin_retencion": "500",
+			"tipo_de_cambio": "4",
+			"tipo_de_cambio_fecha": "26-10-2021",
+			"importe_retenido": "15",
+			"importe_retenido_fecha": "26-10-2021",
+			"importe_pagado_con_retencion": "485"
+		}
+	]
+}
+
+
+{
+	"serie": "RRR1",
+	"numero": 1,
+	"enlace": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b",
+	"enlace_del_pdf": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.pdf",
+	"enlace_del_xml": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.xml",
+	"enlace_del_cdr": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.cdr",
+	"aceptada_por_sunat": true,
+	"sunat_description": "El Comprobante numero RRR1-1 ha sido aceptado",
+	"sunat_note": null,
+	"sunat_responsecode": "0",
+	"sunat_soap_error": ""
+}
+
+
+
+
+ESTRUCTURA PARA DE ENVÍO CON JSON
+CABECERA DEL DOCUMENTO
+ATRIBUTO
+VALOR
+TIPO DE DATO
+REQUISITO
+LONGITUD
+operación
+Este valor siempre deberá ser exactamente "generar_retencion"
+String
+Obligatorio
+-
+serie
+Debe empezar con "P".
+String
+Obligatorio
+4 exactos
+número
+Número correlativo del documento, sin ceros a la izquierda
+Integer
+Obligatorio
+1 hasta 8
+cliente_tipo_de_documento
+Tiene que ser 6. Sólo se pueden emitir a entidades con RUC.
+6 = RUC - REGISTRO ÚNICO DE CONTRIBUYENTE
+Integer
+Obligatorio
+1 exacto
+cliente_numero_de_documento
+Ejemplo: RUC del CLIENTE, número de DNI, Etc.
+String
+Obligatorio
+1 hasta 15
+cliente_denominacion
+Razón o nombre completo del CLIENTE.
+String
+Obligatorio
+1 hasta 100
+cliente_direccion
+Dirección completa.
+String
+Obligatorio
+1 hasta 100
+cliente_email
+Dirección de email debe ser válido.
+String
+Opcional
+1 hasta 250
+cliente_email_1
+Dirección de email debe ser válido.
+String
+Opcional
+1 hasta 250
+cliente_email_2
+Dirección de email debe ser válido.
+String
+Opcional
+1 hasta 250
+fecha_de_emision
+Debe ser la fecha actual. Formato DD-MM-AAAA
+Ejemplo: 10-05-2017
+Date
+Obligatorio
+10 exactos
+moneda
+Siempre debe ser 1 que equivale a SOLES
+String
+Obligatorio
+1 exacto
+tipo_de_tasa_de_retencion
+Debe tener el valor 1, 2 según la siguiente descripción:
+1 = TASA 3% 
+2 = TASA 6%
+String
+Obligatorio
+1 exacto
+total_retenido
+Sumatoria de “importe_retenido” de todos los ITEMS
+Numeric
+Obligatorio
+1 hasta 
+12 enteros con 2 decimales
+total_pagado
+Sumatoria de “importe_pagado_con_retencion” de todos los ITEMS
+Numeric
+Obligatorio
+1 hasta 
+12 enteros con 2 decimales
+observaciones
+Texto de 0 hasta 1000 caracteres. Si se desea saltos de línea para la representación impresa o PDF usar <br>. 
+Ejemplo: XXXXX <br> YYYYYY
+Text
+Opcional
+Hasta 5
+enviar_automaticamente_a_la_sunat
+false = FALSO (En minúsculas)
+true = VERDADERO (En minúsculas)
+Boolean
+Condicional
+Hasta 5
+enviar_automaticamente_al_cliente
+false = FALSO (En minúsculas)
+true = VERDADERO (En minúsculas)
+Boolean
+Condicional
+Hasta 5
+codigo_unico
+Usarlo sólo si deseas que controlemos la generación de documentos. Código único generado y asignado por tu sistema. Por ejemplo puede estar compuesto por el tipo de documento, serie y número correlativo.
+String
+Opcional
+1 hasta 20
+formato_de_pdf
+DESHABILITADO por el momento. Siempre se genera en A4.
+-
+-
+-
+items
+Permite items anidados, se refiere a los ITEMS o LÍNEAS del comprobante, el detalle en un cuadro más abajo.
+-
+-
+-
+
+
+PARA ITEMS O LÍNEAS DEL DOCUMENTO
+ATRIBUTO
+VALOR
+TIPO DE DATO
+REQUISITO
+LONGITUD
+documento_relacionado_tipo
+Tipo de COMPROBANTE que desea generar
+“01” = FACTURA"
+‘03” = BOLETA"
+‘07” = NOTA DE CRÉDITO"
+‘08” = NOTA DE DÉBITO"
+String
+Obligatorio
+2 exactos
+documento_relacionado_serie
+Serie del documento relacionado
+String
+Obligatorio
+4 exactos
+documento_relacionado_numero
+Número del documento relacionado
+Integer
+Obligatorio
+1 hasta 8
+documento_relacionado_fecha_de_emision
+Fecha del documento relacionado. Formato DD-MM-AAAA
+Ejemplo: 10-05-2017
+Date
+Obligatorio
+10 exactos
+documento_relacionado_moneda
+De necesitar más monedas no dude en contactarse con nosotros.
+1 = SOLES"
+2 = DÓLARES"
+3 = EUROS"
+Integer
+Obligatorio
+1 exacto
+documento_relacionado_total
+Ejemplo: 1305.05
+Numeric
+Obligatorio
+1 hasta 
+12 enteros con 2 decimales
+pago_fecha
+Fecha de pago del documento relacionado. Formato DD-MM-AAAA
+Ejemplo: 10-05-2017
+Date
+Obligatorio
+10 exactos
+pago_numero
+Número correlativo del pago. Empieza desde el 1.
+Ejemplo:
+1 (si es un solo pago o primer pago).
+2 (si es segundo pago)
+3 (si es tercer pago)
+Numeric
+Obligatorio
+1 exacto
+pago_total_sin_retencion
+Ejemplo: 1305.05
+Numeric
+Obligatorio
+1 hasta 
+12 enteros con 2 decimales
+tipo_de_cambio
+Ejemplo: 3.421
+Numeric
+Condicional
+1 entero con
+ 3 decimales
+tipo_de_cambio_fecha
+Fecha del tipo de cambio usado. Formato DD-MM-AAAA
+Ejemplo: 10-05-2017
+Date
+Obligatorio
+10 exactos
+importe_retenido
+Ejemplo: 1305.05
+Numeric
+Condicional
+1 hasta 
+12 enteros con 2 decimales
+importe_retenido_fecha
+Fecha del importe retenido. Formato DD-MM-AAAA
+Ejemplo: 10-05-2017
+Date
+Obligatorio
+10 exactos
+importe_pagado_con_retencion
+Ejemplo: 1305.05
+Numeric
+Condicional
+1 hasta 
+12 enteros con 2 decimales
+
+ESTRUCTURA DE RESPUESTA DE NUBEFACT PARA FACTURAS, BOLETAS, NOTAS
+ESTRUCTURAS DE JSON DE RESPUESTA DE NUBEFACT PARA FACTURAS, BOLETAS Y NOTAS
+ATRIBUTO
+VALOR
+TIPO DE DATO
+serie
+Serie de documento generado.
+String
+numero
+Número de documento generado.
+Integer
+enlace
+ENLACE único asignado por NUBEFACT.
+Para ver el PDF puedes agregar la extensión .pdf, ejemplo: https://www.nubefact.com/retencion/xxxxxxxx.pdf
+String
+enlace_del_pdf
+Recibirás el link completo del PDF ya generado: https://www.nubefact.com/retencion/xxxxxxxx.pdf
+Text
+enlace_del_xml
+Recibirás el link completo del XML ya generado: https://www.nubefact.com/retencion/xxxxxxxx.xml
+Text
+enlace_del_cdr
+Recibirás el link completo el CDR (Constancia de Recepción de SUNAT) si la SUNAT ya respondió: https://www.nubefact.com/retencion/xxxxxxxx.cdr
+Text
+aceptada_por_sunat
+false = FALSO (En minúsculas)
+true = VERDADERO (En minúsculas)
+Boolean
+sunat_description
+Cuando hay errores en la SUNAT se describirá el error
+String
+sunat_note
+Cuando hay errores en la SUNAT se describirá el error
+String
+sunat_responsecode
+Cuando hay errores en la SUNAT se describirá el error
+String
+sunat_soap_error
+Otros errores que imposibilitan el envío a la SUNAT
+String
+
+
+OPERACIÓN 2: CONSULTAR RETENCIÓN
+JSON PARA ENVIAR A NUBEFACT
+JSON DE RESPUESTA DE NUBEFACT
+{
+	"operacion": "consultar_retencion",
+	"serie": "RRR1",
+	"numero": "1"
+}
+{
+	"serie": "RRR1",
+	"numero": 1,
+	"enlace": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b",
+	"enlace_del_pdf": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.pdf",
+	"enlace_del_xml": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.xml",
+	"enlace_del_cdr": "http://www.nubefact.com/retencion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.cdr",
+	"aceptada_por_sunat": true,
+	"sunat_description": "El Comprobante numero RRR1-1 ha sido aceptado",
+	"sunat_note": null,
+	"sunat_responsecode": "0",
+	"sunat_soap_error": ""
+}
+
+
+
+
+
+OPERACIÓN 3: GENERAR REVERSIÓN DE UNA RETENCIÓN
+JSON PARA ENVIAR A NUBEFACT
+JSON DE RESPUESTA DE NUBEFACT
+{
+	"operacion": "generar_reversion_retencion",
+	"serie": "RRR1",
+	"numero": "1",
+        "motivo": "ERROR"
+}
+{
+	"numero": 1,
+	"enlace": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b",
+	"enlace_del_pdf": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.pdf",
+	"enlace_del_xml": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.xml",
+	"enlace_del_cdr": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.cdr",
+	"aceptada_por_sunat": true,
+	"sunat_description": "El Resumen de Reversiones RR-20230720-1 ha sido ACEPTADA",
+	"sunat_note": null,
+	"sunat_responsecode": "0",
+	"sunat_soap_error": ""
+}
+
+
+
+
+
+OPERACIÓN 4: CONSULTAR REVERSIÓN DE UNA RETENCIÓN
+JSON PARA ENVIAR A NUBEFACT
+JSON DE RESPUESTA DE NUBEFACT
+{
+	"operacion": "consultar_reversion_retencion",
+	"serie": "RRR1",
+	"numero": "1"
+}
+{
+	"numero": 1,
+	"enlace": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b",
+	"enlace_del_pdf": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.pdf",
+	"enlace_del_xml": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.xml",
+	"enlace_del_cdr": "http://www.nubefact.com/see_retention_reversion/ad7c6bbb-3183-4177-aeda-17e07bad1811-7a44ad83-c09e-407b-a099-10830eed7b0b.cdr",
+	"aceptada_por_sunat": true,
+	"sunat_description": "El Resumen de Reversiones RR-20230720-1 ha sido ACEPTADA",
+	"sunat_note": null,
+	"sunat_responsecode": "0",
+	"sunat_soap_error": ""
+}
+
+
+
+
+

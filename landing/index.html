@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERP System - Gestión Integral para tu Negocio</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <!-- AOS Animation Library -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            300: '#a5b4fc',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            800: '#3730a3',
+                            900: '#312e81',
+                            950: '#1e1b4b',
+                        },
+                        secondary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                        dark: '#0f172a'
+                    },
+                    animation: {
+                        'blob': 'blob 10s infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                        'float-delayed': 'float 6s ease-in-out 3s infinite',
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        blob: {
+                            '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                            '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+                            '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+                            '100%': { transform: 'translate(0px, 0px) scale(1)' },
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-20px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #fafafa;
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #4f46e5 0%, #0ea5e9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero-bg {
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+        }
+        .glass-nav {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(1, 1fr);
+            gap: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .bento-grid {
+                grid-template-columns: repeat(3, 1fr);
+                grid-template-rows: repeat(3, auto);
+            }
+            .bento-item-lg {
+                grid-column: span 2;
+                grid-row: span 1;
+            }
+            .bento-item-tall {
+                grid-column: span 1;
+                grid-row: span 2;
+            }
+        }
+        .feature-icon {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        }
+        /* Smooth scrolling */
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        /* Marquee Animation */
+        @keyframes scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        .animate-scroll {
+            animation: scroll 30s linear infinite;
+        }
+        
+        /* Shine Effect */
+        .group:hover .shine {
+            animation: shine 1.5s;
+        }
+        @keyframes shine {
+            100% { left: 125%; }
+        }
+        .shine-wrapper {
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 100%);
+            transform: skewX(-25deg);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="font-sans text-slate-800 antialiased overflow-x-hidden selection:bg-primary-200 selection:text-primary-900">
+
+    <!-- Navbar -->
+    <nav class="fixed w-full z-50 glass-nav transition-all duration-300" id="navbar">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2 group cursor-pointer">
+                <div class="bg-gradient-to-br from-primary-600 to-secondary-500 text-white p-2.5 rounded-xl shadow-lg shadow-primary-500/30 group-hover:scale-105 transition-transform duration-300">
+                    <i class="bi bi-grid-1x2-fill text-xl"></i>
+                </div>
+                <span class="text-2xl font-bold text-slate-900 tracking-tight">ERP<span class="text-primary-600">System</span></span>
+            </div>
+            <div class="hidden lg:flex items-center gap-8 bg-white/50 px-6 py-2 rounded-full border border-white/40 shadow-sm backdrop-blur-sm">
+                <a href="#inicio" class="text-sm font-semibold text-slate-600 hover:text-primary-600 transition-colors">Inicio</a>
+                <a href="#modulos" class="text-sm font-semibold text-slate-600 hover:text-primary-600 transition-colors">Módulos</a>
+                <a href="#integraciones" class="text-sm font-semibold text-slate-600 hover:text-primary-600 transition-colors">Integraciones</a>
+                <a href="#beneficios" class="text-sm font-semibold text-slate-600 hover:text-primary-600 transition-colors">Beneficios</a>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="https://erp.despegaperudigital.com/" class="hidden md:flex text-slate-600 hover:text-primary-600 font-semibold text-sm transition-colors">
+                    Login
+                </a>
+                <a href="https://erp.despegaperudigital.com/" class="hidden sm:flex bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-semibold text-sm transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 items-center gap-2">
+                    Comenzar <i class="bi bi-arrow-right"></i>
+                </a>
+                <button id="mobile-menu-btn" class="lg:hidden text-slate-900 hover:text-primary-600 focus:outline-none ml-2">
+                    <i class="bi bi-list text-3xl"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile Menu Overlay -->
+        <div id="mobile-menu" class="fixed inset-0 z-40 bg-white/95 backdrop-blur-xl transform translate-x-full transition-transform duration-300 lg:hidden flex flex-col justify-center items-center gap-8">
+            <button id="close-menu-btn" class="absolute top-6 right-6 text-slate-600 hover:text-primary-600">
+                <i class="bi bi-x-lg text-3xl"></i>
+            </button>
+            <a href="#inicio" class="text-2xl font-bold text-slate-800 hover:text-primary-600 mobile-link">Inicio</a>
+            <a href="#modulos" class="text-2xl font-bold text-slate-800 hover:text-primary-600 mobile-link">Módulos</a>
+            <a href="#integraciones" class="text-2xl font-bold text-slate-800 hover:text-primary-600 mobile-link">Integraciones</a>
+            <a href="#precios" class="text-2xl font-bold text-slate-800 hover:text-primary-600 mobile-link">Precios</a>
+            <a href="https://erp.despegaperudigital.com/" class="text-2xl font-bold text-primary-600 mobile-link">Login</a>
+        </div>
+    </nav>
+
+    <!-- Modern Hero Section -->
+    <section id="inicio" class="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+        <!-- Abstract Background -->
+        <div class="absolute top-0 left-0 w-full h-full overflow-hidden -z-10">
+            <div class="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-purple-200/40 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+            <div class="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-blue-200/40 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
+            <div class="absolute bottom-[-20%] left-[20%] w-[600px] h-[600px] bg-indigo-200/40 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000"></div>
+            <div class="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
+        </div>
+
+        <div class="container mx-auto px-6 relative z-10">
+            <div class="flex flex-col lg:flex-row items-center gap-16">
+                <!-- Text Content -->
+                <div class="lg:w-1/2 text-center lg:text-left" data-aos="fade-up" data-aos-duration="1000">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-primary-600 text-xs font-bold uppercase tracking-wider mb-8 hover:bg-blue-100 transition-colors cursor-default">
+                        <span class="w-2 h-2 rounded-full bg-primary-500 animate-pulse"></span>
+                        v2.0 Disponible Ahora
+                    </div>
+                    <h1 class="text-5xl lg:text-7xl font-extrabold leading-[1.1] mb-6 text-slate-900 tracking-tight">
+                        Tu empresa, <br>
+                        <span class="gradient-text">más inteligente.</span>
+                    </h1>
+                    <p class="text-lg text-slate-600 mb-10 leading-relaxed max-w-xl mx-auto lg:mx-0 font-medium">
+                        Centraliza facturación, inventarios, contabilidad y RRHH en una plataforma nube diseñada para escalar contigo. Sin complicaciones, solo resultados.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+                        <a href="#modulos" class="px-8 py-4 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl font-bold text-lg shadow-xl shadow-primary-500/20 transition-all transform hover:-translate-y-1 text-center flex items-center justify-center gap-2">
+                            Explorar Sistema
+                        </a>
+                        <a href="https://erp.despegaperudigital.com/" class="px-8 py-4 bg-white hover:bg-gray-50 text-slate-700 border border-gray-200 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md">
+                            <i class="bi bi-play-circle-fill text-primary-600"></i> Ver Demo
+                        </a>
+                    </div>
+                    
+                    <div class="mt-12">
+                        <p class="text-slate-400 font-bold text-sm mb-4 uppercase tracking-wider">Confían en nosotros:</p>
+                        <div class="relative w-full max-w-lg overflow-hidden">
+                            <div class="flex gap-12 whitespace-nowrap animate-scroll opacity-60 grayscale hover:grayscale-0 transition-all duration-500">
+                                <!-- Logo Set 1 -->
+                                <div class="flex items-center gap-12">
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-building"></i> CorpGroup</span>
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-shop"></i> MarketPerú</span>
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-flower1"></i> AgroExport</span>
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-hospital"></i> ClínicaSalud</span>
+                                </div>
+                                <!-- Logo Set 2 (Duplicate for infinite scroll) -->
+                                <div class="flex items-center gap-12">
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-building"></i> CorpGroup</span>
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-shop"></i> MarketPerú</span>
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-flower1"></i> AgroExport</span>
+                                    <span class="text-xl font-bold text-slate-500 flex items-center gap-2"><i class="bi bi-hospital"></i> ClínicaSalud</span>
+                                </div>
+                            </div>
+                            <div class="absolute top-0 left-0 w-20 h-full bg-gradient-to-r from-[#fafafa] to-transparent z-10"></div>
+                            <div class="absolute top-0 right-0 w-20 h-full bg-gradient-to-l from-[#fafafa] to-transparent z-10"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Hero Image / 3D Element -->
+                <div class="lg:w-1/2 relative perspective-1000" data-aos="zoom-in" data-aos-duration="1200" data-aos-delay="200">
+                    <div class="relative z-10 animate-float transform rotate-y-12 rotate-x-6 hover:rotate-0 transition-transform duration-700 ease-out preserve-3d">
+                        <!-- HTML Mockup of ERP -->
+                        <div class="relative bg-slate-50 rounded-[2rem] shadow-2xl border-4 border-white/50 backdrop-blur-sm overflow-hidden aspect-[16/10] flex text-left">
+                            
+                            <!-- Sidebar -->
+                            <div class="w-16 md:w-20 bg-slate-900 flex flex-col items-center py-6 gap-6 z-20">
+                                <div class="w-10 h-10 rounded-xl bg-primary-600 flex items-center justify-center text-white shadow-lg shadow-primary-500/50">
+                                    <i class="bi bi-grid-fill"></i>
+                                </div>
+                                <div class="w-8 border-b border-slate-700"></div>
+                                <div class="flex flex-col gap-5 text-slate-400 w-full items-center">
+                                    <div class="w-10 h-10 rounded-xl bg-white/10 text-white flex items-center justify-center"><i class="bi bi-house"></i></div>
+                                    <div class="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center transition-colors"><i class="bi bi-people"></i></div>
+                                    <div class="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center transition-colors"><i class="bi bi-box-seam"></i></div>
+                                    <div class="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center transition-colors"><i class="bi bi-receipt"></i></div>
+                                    <div class="w-10 h-10 rounded-xl hover:bg-white/5 flex items-center justify-center transition-colors"><i class="bi bi-graph-up"></i></div>
+                                </div>
+                                <div class="mt-auto w-8 h-8 rounded-full bg-slate-700"></div>
+                            </div>
+
+                            <!-- Main Content -->
+                            <div class="flex-1 p-6 flex flex-col gap-6 bg-slate-50 overflow-hidden relative">
+                                <!-- Decorative Background Circle -->
+                                <div class="absolute top-[-20%] right-[-10%] w-64 h-64 bg-primary-100 rounded-full blur-3xl opacity-50 pointer-events-none"></div>
+
+                                <!-- Header -->
+                                <div class="flex justify-between items-center z-10">
+                                    <div class="flex flex-col">
+                                        <div class="h-4 w-32 bg-slate-200 rounded-full mb-2"></div>
+                                        <div class="h-3 w-20 bg-slate-100 rounded-full"></div>
+                                    </div>
+                                    <div class="flex gap-3 items-center">
+                                        <div class="h-8 w-8 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-slate-400"><i class="bi bi-bell"></i></div>
+                                        <div class="h-8 w-8 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center font-bold text-xs border border-primary-200">JD</div>
+                                    </div>
+                                </div>
+
+                                <!-- Stats Row -->
+                                <div class="grid grid-cols-3 gap-4 z-10">
+                                    <!-- Card 1 -->
+                                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 group hover:border-primary-200 transition-colors">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div class="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><i class="bi bi-currency-dollar"></i></div>
+                                            <span class="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-bold">+12%</span>
+                                        </div>
+                                        <div class="h-3 w-16 bg-slate-100 rounded-full mb-2"></div>
+                                        <div class="h-6 w-24 bg-slate-800 rounded-full group-hover:bg-primary-600 transition-colors"></div>
+                                    </div>
+                                     <!-- Card 2 -->
+                                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 group hover:border-primary-200 transition-colors">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div class="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><i class="bi bi-people"></i></div>
+                                            <span class="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-bold">+5%</span>
+                                        </div>
+                                        <div class="h-3 w-16 bg-slate-100 rounded-full mb-2"></div>
+                                        <div class="h-6 w-20 bg-slate-800 rounded-full group-hover:bg-purple-600 transition-colors"></div>
+                                    </div>
+                                     <!-- Card 3 -->
+                                     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 group hover:border-primary-200 transition-colors">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div class="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center"><i class="bi bi-box"></i></div>
+                                            <span class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-bold">-2%</span>
+                                        </div>
+                                        <div class="h-3 w-16 bg-slate-100 rounded-full mb-2"></div>
+                                        <div class="h-6 w-16 bg-slate-800 rounded-full group-hover:bg-orange-600 transition-colors"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Charts Area -->
+                                <div class="flex gap-4 h-full z-10 min-h-0">
+                                    <!-- Main Chart -->
+                                    <div class="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <div class="h-3 w-24 bg-slate-100 rounded-full"></div>
+                                            <div class="h-6 w-16 bg-slate-50 rounded-lg"></div>
+                                        </div>
+                                        <div class="flex-1 flex items-end justify-between gap-2 px-2 pb-2">
+                                            <div class="w-full bg-slate-50 rounded-t-sm h-[40%] group relative">
+                                                <div class="absolute bottom-0 w-full bg-primary-200 rounded-t-sm h-0 group-hover:h-full transition-all duration-500"></div>
+                                            </div>
+                                            <div class="w-full bg-primary-500 rounded-t-sm h-[65%] shadow-lg shadow-primary-500/30 animate-pulse"></div>
+                                            <div class="w-full bg-slate-50 rounded-t-sm h-[45%]"></div>
+                                            <div class="w-full bg-slate-50 rounded-t-sm h-[80%] relative overflow-hidden">
+                                                <div class="absolute bottom-0 w-full h-full bg-primary-100 animate-pulse-slow"></div>
+                                            </div>
+                                            <div class="w-full bg-slate-50 rounded-t-sm h-[55%]"></div>
+                                            <div class="w-full bg-slate-50 rounded-t-sm h-[90%] bg-gradient-to-t from-primary-600 to-primary-400"></div>
+                                            <div class="w-full bg-slate-50 rounded-t-sm h-[30%]"></div>
+                                        </div>
+                                    </div>
+                                    <!-- Right Panel -->
+                                    <div class="w-1/3 flex flex-col gap-4">
+                                        <div class="flex-1 bg-white rounded-2xl shadow-sm border border-slate-100 p-3 flex flex-col justify-center items-center relative overflow-hidden">
+                                             <div class="absolute inset-0 bg-gradient-to-br from-purple-50 to-white"></div>
+                                             <div class="relative w-16 h-16 rounded-full border-4 border-slate-100 border-r-purple-500 border-t-purple-500 -rotate-45 mb-2"></div>
+                                             <div class="relative h-2 w-12 bg-slate-100 rounded-full"></div>
+                                        </div>
+                                        <div class="bg-slate-900 rounded-2xl p-3 shadow-lg flex flex-col justify-center items-center text-white">
+                                            <i class="bi bi-lightning-charge-fill text-yellow-400 mb-1 text-xl"></i>
+                                            <div class="h-2 w-16 bg-white/20 rounded-full"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Floating Widgets -->
+                        <div class="absolute -right-8 top-12 bg-white p-4 rounded-2xl shadow-2xl border border-gray-100 animate-float-delayed hidden md:block z-30">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-green-100 p-2.5 rounded-xl text-green-600 shadow-sm">
+                                    <i class="bi bi-check-circle-fill text-xl"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Notificación</p>
+                                    <p class="text-sm font-bold text-slate-800">Factura F001-45 Aceptada</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="absolute -left-12 bottom-12 bg-white p-4 rounded-2xl shadow-2xl border border-gray-100 animate-float hidden md:block z-30">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-indigo-100 p-2.5 rounded-xl text-indigo-600 shadow-sm">
+                                    <i class="bi bi-person-plus-fill text-xl"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">CRM Update</p>
+                                    <p class="text-sm font-bold text-slate-800">+12 Leads Nuevos</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bento Grid Modules Section -->
+    <section id="modulos" class="py-24 bg-slate-50 relative">
+        <div class="container mx-auto px-6 relative z-10">
+            <div class="text-center max-w-3xl mx-auto mb-16" data-aos="fade-up">
+                <h2 class="text-4xl font-extrabold text-slate-900 mb-6">Un ecosistema completo</h2>
+                <p class="text-slate-600 text-lg">Todas las herramientas que necesitas, integradas en un solo lugar.</p>
+            </div>
+
+            <div class="bento-grid">
+                <!-- Facturación (Large) -->
+                <div class="group bg-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all border border-slate-100 bento-item-lg relative overflow-hidden" data-aos="fade-up">
+                    <div class="shine-wrapper shine"></div>
+                    <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <i class="bi bi-cart-check-fill text-9xl text-primary-600"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl mb-6">
+                            <i class="bi bi-receipt"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-slate-900 mb-4">Facturación y Ventas</h3>
+                        <p class="text-slate-600 mb-6 max-w-md">Sistema completo de emisión de comprobantes electrónicos con validación directa a SUNAT/OSE.</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6">
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-primary-500"></i> Facturas y Boletas Electrónicas</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-primary-500"></i> Cotizaciones y Pedidos</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-primary-500"></i> Notas de Crédito/Débito</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-primary-500"></i> Guías de Remisión</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-primary-500"></i> Reportes de Ventas</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-primary-500"></i> Cuentas por Cobrar</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CRM (Tall) -->
+                <div class="group bg-slate-900 text-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all bento-item-tall relative overflow-hidden" data-aos="fade-up" data-aos-delay="100">
+                    <div class="shine-wrapper shine"></div>
+                    <div class="absolute inset-0 bg-gradient-to-br from-slate-900 to-slate-800"></div>
+                    <div class="absolute bottom-0 right-0 p-4 opacity-10">
+                        <i class="bi bi-funnel-fill text-9xl text-white"></i>
+                    </div>
+                    <div class="relative z-10 h-full flex flex-col">
+                        <div class="w-12 h-12 rounded-xl bg-white/10 text-white flex items-center justify-center text-2xl mb-6">
+                            <i class="bi bi-people"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold mb-4">CRM Potente</h3>
+                        <p class="text-slate-300 mb-8">Maximiza tus conversiones gestionando cada etapa del proceso comercial.</p>
+                        <ul class="space-y-4 mb-8 flex-grow">
+                            <li class="flex items-center gap-3 text-sm text-slate-300">
+                                <span class="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs"><i class="bi bi-check"></i></span>
+                                Embudo de Ventas (Pipeline)
+                            </li>
+                            <li class="flex items-center gap-3 text-sm text-slate-300">
+                                <span class="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs"><i class="bi bi-check"></i></span>
+                                Gestión de Leads y Prospectos
+                            </li>
+                            <li class="flex items-center gap-3 text-sm text-slate-300">
+                                <span class="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs"><i class="bi bi-check"></i></span>
+                                Agenda y Recordatorios
+                            </li>
+                            <li class="flex items-center gap-3 text-sm text-slate-300">
+                                <span class="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs"><i class="bi bi-check"></i></span>
+                                Historial de Interacciones
+                            </li>
+                            <li class="flex items-center gap-3 text-sm text-slate-300">
+                                <span class="w-6 h-6 rounded-full bg-green-500/20 text-green-400 flex items-center justify-center text-xs"><i class="bi bi-check"></i></span>
+                                Metas de Venta
+                            </li>
+                        </ul>
+                        <button class="w-full py-3 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold transition-colors">Ver CRM</button>
+                    </div>
+                </div>
+
+                <!-- Inventarios (Large) -->
+                <div class="group bg-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all border border-slate-100 bento-item-lg relative overflow-hidden" data-aos="fade-up" data-aos-delay="200">
+                    <div class="shine-wrapper shine"></div>
+                    <div class="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                        <i class="bi bi-box-seam-fill text-9xl text-amber-600"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl mb-6">
+                            <i class="bi bi-box-seam"></i>
+                        </div>
+                        <h3 class="text-2xl font-bold text-slate-900 mb-4">Logística e Inventarios</h3>
+                        <p class="text-slate-600 mb-6 max-w-md">Control total de tu mercadería con seguimiento en tiempo real de movimientos.</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6">
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-amber-500"></i> Control Multialmacén</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-amber-500"></i> Kardex Valorizado</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-amber-500"></i> Entradas y Salidas</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-amber-500"></i> Alertas de Stock Bajo</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-amber-500"></i> Transferencias entre Almacenes</div>
+                            <div class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-amber-500"></i> Códigos de Barra/QR</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Finanzas -->
+                <div class="group bg-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all border border-slate-100 relative overflow-hidden" data-aos="fade-up" data-aos-delay="300">
+                    <div class="shine-wrapper shine"></div>
+                    <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mb-4">
+                        <i class="bi bi-cash-coin"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 mb-4">Finanzas</h3>
+                    <ul class="space-y-3 mb-4">
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-emerald-500"></i> Cuentas por Cobrar/Pagar</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-emerald-500"></i> Control de Caja Chica</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-emerald-500"></i> Conciliación Bancaria</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-emerald-500"></i> Reportes Financieros</li>
+                    </ul>
+                </div>
+
+                <!-- RRHH -->
+                <div class="group bg-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all border border-slate-100 relative overflow-hidden" data-aos="fade-up" data-aos-delay="400">
+                    <div class="shine-wrapper shine"></div>
+                    <div class="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-2xl mb-4">
+                        <i class="bi bi-person-badge"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 mb-4">RR.HH.</h3>
+                    <ul class="space-y-3 mb-4">
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-rose-500"></i> Gestión de Colaboradores</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-rose-500"></i> Control de Asistencia</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-rose-500"></i> Contratos y Renovaciones</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-rose-500"></i> Adelantos y Préstamos</li>
+                    </ul>
+                </div>
+
+                <!-- Órdenes de Trabajo -->
+                <div class="group bg-white rounded-3xl p-8 shadow-sm hover:shadow-xl transition-all border border-slate-100 relative overflow-hidden" data-aos="fade-up" data-aos-delay="500">
+                    <div class="shine-wrapper shine"></div>
+                    <div class="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center text-2xl mb-4">
+                        <i class="bi bi-tools"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900 mb-4">Servicios</h3>
+                    <ul class="space-y-3 mb-4">
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-orange-500"></i> Órdenes de Trabajo</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-orange-500"></i> Asignación de Técnicos</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-orange-500"></i> Control de Estados</li>
+                        <li class="flex items-center gap-2 text-sm text-slate-600"><i class="bi bi-check-circle-fill text-orange-500"></i> Materiales y Costos</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Integrations Modern Section -->
+    <section id="integraciones" class="py-24 bg-white overflow-hidden">
+        <div class="container mx-auto px-6">
+            <div class="bg-gradient-to-br from-primary-900 to-slate-900 rounded-[3rem] p-12 md:p-20 text-white relative overflow-hidden shadow-2xl" data-aos="zoom-in">
+                <!-- Decorative Elements -->
+                <div class="absolute top-0 right-0 w-[600px] h-[600px] bg-primary-500/20 rounded-full blur-3xl -mr-32 -mt-32"></div>
+                <div class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-secondary-500/20 rounded-full blur-3xl -ml-20 -mb-20"></div>
+                
+                <div class="relative z-10 flex flex-col lg:flex-row items-center gap-16">
+                    <div class="lg:w-1/2">
+                        <h2 class="text-4xl md:text-5xl font-extrabold mb-6">Integración Nativa con SUNAT y RENIEC</h2>
+                        <p class="text-lg text-slate-300 mb-8 leading-relaxed">
+                            Nuestra API se conecta directamente a los servicios gubernamentales para validar RUCs, DNIs y comprobantes en tiempo real. Cero errores, máxima velocidad.
+                        </p>
+                        <div class="flex flex-wrap gap-4">
+                            <div class="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-xl flex items-center gap-3">
+                                <i class="bi bi-check-circle-fill text-green-400"></i> Validez de Comprobantes
+                            </div>
+                            <div class="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-xl flex items-center gap-3">
+                                <i class="bi bi-check-circle-fill text-green-400"></i> Consulta RUC/DNI
+                            </div>
+                            <div class="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-xl flex items-center gap-3">
+                                <i class="bi bi-check-circle-fill text-green-400"></i> Tipo de Cambio SBS
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:w-1/2">
+                        <div class="bg-white/5 backdrop-blur-xl border border-white/10 p-8 rounded-2xl relative">
+                            <div class="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
+                                <div class="flex gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                </div>
+                                <span class="text-xs font-mono text-slate-400">API RESPONSE</span>
+                            </div>
+                            <div class="font-mono text-sm space-y-2">
+                                <div class="flex gap-2"><span class="text-purple-400">"estado"</span>: <span class="text-green-400">"ACTIVO"</span>,</div>
+                                <div class="flex gap-2"><span class="text-purple-400">"condicion"</span>: <span class="text-green-400">"HABIDO"</span>,</div>
+                                <div class="flex gap-2"><span class="text-purple-400">"razon_social"</span>: <span class="text-blue-300">"EMPRESA LÍDER S.A.C."</span>,</div>
+                                <div class="flex gap-2"><span class="text-purple-400">"ubigeo"</span>: <span class="text-yellow-300">"150101"</span>,</div>
+                                <div class="flex gap-2"><span class="text-purple-400">"validacion_sunat"</span>: <span class="text-green-400">true</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison Section -->
+    <section class="py-24 bg-slate-50">
+        <div class="container mx-auto px-6">
+            <div class="text-center max-w-3xl mx-auto mb-16" data-aos="fade-up">
+                <h2 class="text-4xl font-extrabold text-slate-900 mb-6">¿Por qué elegirnos?</h2>
+                <p class="text-slate-600 text-lg">No somos un software más. Somos tu socio de crecimiento.</p>
+            </div>
+
+            <div class="bg-white rounded-[2.5rem] shadow-xl overflow-hidden border border-slate-100" data-aos="fade-up" data-aos-delay="100">
+                <div class="grid grid-cols-1 md:grid-cols-3">
+                    <!-- Feature Labels -->
+                    <div class="p-8 md:p-12 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col justify-center gap-8">
+                        <h3 class="text-2xl font-bold text-slate-900">Características</h3>
+                        <div class="space-y-6 text-slate-600 font-medium">
+                            <div class="h-8 flex items-center">Implementación</div>
+                            <div class="h-8 flex items-center">Actualizaciones SUNAT</div>
+                            <div class="h-8 flex items-center">Soporte Técnico</div>
+                            <div class="h-8 flex items-center">Personalización</div>
+                            <div class="h-8 flex items-center">Seguridad de Datos</div>
+                        </div>
+                    </div>
+
+                    <!-- Us -->
+                    <div class="p-8 md:p-12 bg-primary-600 text-white flex flex-col justify-center gap-8 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-16 -mt-16"></div>
+                        <h3 class="text-2xl font-bold flex items-center gap-2">
+                            <i class="bi bi-check-circle-fill text-green-400"></i> ERP System
+                        </h3>
+                        <div class="space-y-6 font-semibold">
+                            <div class="h-8 flex items-center text-green-300">Inmediata (Nube)</div>
+                            <div class="h-8 flex items-center text-green-300">Automáticas y Gratuitas</div>
+                            <div class="h-8 flex items-center text-green-300">24/7 Especializado</div>
+                            <div class="h-8 flex items-center text-green-300">Flexible y Modular</div>
+                            <div class="h-8 flex items-center text-green-300">Encriptación Bancaria</div>
+                        </div>
+                    </div>
+
+                    <!-- Others -->
+                    <div class="p-8 md:p-12 bg-white flex flex-col justify-center gap-8">
+                        <h3 class="text-2xl font-bold text-slate-400">Software Tradicional</h3>
+                        <div class="space-y-6 text-slate-400">
+                            <div class="h-8 flex items-center">Semanas o Meses</div>
+                            <div class="h-8 flex items-center">Costo Adicional</div>
+                            <div class="h-8 flex items-center">Horario de Oficina</div>
+                            <div class="h-8 flex items-center">Rígido / Costoso</div>
+                            <div class="h-8 flex items-center">Depende de tu Servidor</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="precios" class="py-24 bg-slate-50 relative">
+        <div class="container mx-auto px-6 relative z-10">
+            <div class="text-center max-w-3xl mx-auto mb-16" data-aos="fade-up">
+                <h2 class="text-4xl font-extrabold text-slate-900 mb-6">Planes flexibles</h2>
+                <p class="text-slate-600 text-lg">Elige el plan que mejor se adapte al tamaño de tu empresa.</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Plan Emprendedor -->
+                <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm hover:shadow-xl transition-all relative group" data-aos="fade-up" data-aos-delay="0">
+                    <h3 class="text-xl font-bold text-slate-900 mb-2">Emprendedor</h3>
+                    <div class="text-4xl font-extrabold text-slate-900 mb-6">S/ 59<span class="text-lg font-normal text-slate-500">/mes</span></div>
+                    <p class="text-slate-500 mb-8 text-sm">Ideal para pequeños negocios y profesionales independientes.</p>
+                    <a href="#" class="block w-full py-3 px-6 bg-slate-50 hover:bg-slate-100 text-slate-900 font-bold rounded-xl text-center transition-colors mb-8 border border-slate-200">Empezar Gratis</a>
+                    <ul class="space-y-4 text-sm text-slate-600">
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> Facturación Ilimitada</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> 1 Usuario</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> Inventario Básico</li>
+                    </ul>
+                </div>
+
+                <!-- Plan Empresarial -->
+                <div class="bg-slate-900 text-white rounded-3xl p-8 border border-slate-800 shadow-2xl relative transform md:-translate-y-4" data-aos="fade-up" data-aos-delay="100">
+                    <div class="absolute top-0 right-0 bg-gradient-to-r from-primary-600 to-secondary-500 text-white text-xs font-bold px-3 py-1 rounded-bl-xl rounded-tr-2xl">MÁS POPULAR</div>
+                    <h3 class="text-xl font-bold mb-2">Empresarial</h3>
+                    <div class="text-4xl font-extrabold mb-6">S/ 99<span class="text-lg font-normal text-slate-400">/mes</span></div>
+                    <p class="text-slate-300 mb-8 text-sm">Para empresas en crecimiento que necesitan control total.</p>
+                    <a href="#" class="block w-full py-3 px-6 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-xl text-center transition-colors mb-8 shadow-lg shadow-primary-500/30">Prueba de 14 días</a>
+                    <ul class="space-y-4 text-sm text-slate-300">
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-400"></i> Todo lo anterior</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-400"></i> 3 Usuarios</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-400"></i> Multialmacén</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-400"></i> Reportes Avanzados</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-400"></i> Módulo Contable</li>
+                    </ul>
+                </div>
+
+                <!-- Plan Corporativo -->
+                <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm hover:shadow-xl transition-all relative group" data-aos="fade-up" data-aos-delay="200">
+                    <h3 class="text-xl font-bold text-slate-900 mb-2">Corporativo</h3>
+                    <div class="text-4xl font-extrabold text-slate-900 mb-6">S/ 199<span class="text-lg font-normal text-slate-500">/mes</span></div>
+                    <p class="text-slate-500 mb-8 text-sm">Solución integral para grandes volúmenes y equipos.</p>
+                    <a href="#" class="block w-full py-3 px-6 bg-slate-50 hover:bg-slate-100 text-slate-900 font-bold rounded-xl text-center transition-colors mb-8 border border-slate-200">Contactar Ventas</a>
+                    <ul class="space-y-4 text-sm text-slate-600">
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> Usuarios Ilimitados</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> API Access</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> Soporte Prioritario 24/7</li>
+                        <li class="flex items-center gap-3"><i class="bi bi-check-circle-fill text-green-500"></i> Personalización</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Trust Badges -->
+            <div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 border-t border-slate-200 pt-12">
+                <div class="flex flex-col items-center text-center">
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <h4 class="font-bold text-slate-900">Garantía de 30 días</h4>
+                    <p class="text-sm text-slate-500">Si no estás satisfecho, te devolvemos tu dinero.</p>
+                </div>
+                <div class="flex flex-col items-center text-center">
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4">
+                        <i class="bi bi-headset"></i>
+                    </div>
+                    <h4 class="font-bold text-slate-900">Soporte Premium</h4>
+                    <p class="text-sm text-slate-500">Ayuda experta cuando la necesites.</p>
+                </div>
+                <div class="flex flex-col items-center text-center">
+                    <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-2xl mb-4">
+                        <i class="bi bi-lock"></i>
+                    </div>
+                    <h4 class="font-bold text-slate-900">Pago Seguro</h4>
+                    <p class="text-sm text-slate-500">Tus transacciones están 100% protegidas.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Minimal -->
+    <section class="py-20 bg-white border-t border-slate-100">
+        <div class="container mx-auto px-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+                <div class="text-center">
+                    <div class="text-4xl font-bold text-slate-900 mb-2">+500</div>
+                    <div class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Empresas</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-4xl font-bold text-slate-900 mb-2">1M+</div>
+                    <div class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Facturas</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-4xl font-bold text-slate-900 mb-2">99.9%</div>
+                    <div class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Uptime</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-4xl font-bold text-slate-900 mb-2">24/7</div>
+                    <div class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Soporte</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="py-24 bg-white border-t border-slate-100">
+        <div class="container mx-auto px-6 max-w-4xl">
+            <div class="text-center mb-16" data-aos="fade-up">
+                <h2 class="text-4xl font-extrabold text-slate-900 mb-6">Preguntas Frecuentes</h2>
+            </div>
+            
+            <div class="space-y-4" data-aos="fade-up" data-aos-delay="100">
+                <!-- FAQ Item 1 -->
+                <div class="border border-slate-200 rounded-2xl p-6 hover:border-primary-200 transition-colors cursor-pointer group faq-item">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-slate-900">¿Necesito instalar algún software?</h3>
+                        <i class="bi bi-plus-lg text-slate-400 group-hover:text-primary-600 transition-colors"></i>
+                    </div>
+                    <div class="mt-4 text-slate-600 hidden faq-answer">
+                        No. Nuestro sistema es 100% nube, lo que significa que puedes acceder desde cualquier dispositivo con internet sin instalar nada.
+                    </div>
+                </div>
+                <!-- FAQ Item 2 -->
+                <div class="border border-slate-200 rounded-2xl p-6 hover:border-primary-200 transition-colors cursor-pointer group faq-item">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-slate-900">¿Mis datos están seguros?</h3>
+                        <i class="bi bi-plus-lg text-slate-400 group-hover:text-primary-600 transition-colors"></i>
+                    </div>
+                    <div class="mt-4 text-slate-600 hidden faq-answer">
+                        Absolutamente. Utilizamos encriptación SSL de grado bancario y realizamos backups diarios automáticos de toda tu información.
+                    </div>
+                </div>
+                <!-- FAQ Item 3 -->
+                <div class="border border-slate-200 rounded-2xl p-6 hover:border-primary-200 transition-colors cursor-pointer group faq-item">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-bold text-slate-900">¿Puedo cambiar de plan después?</h3>
+                        <i class="bi bi-plus-lg text-slate-400 group-hover:text-primary-600 transition-colors"></i>
+                    </div>
+                    <div class="mt-4 text-slate-600 hidden faq-answer">
+                        Sí, puedes actualizar o degradar tu plan en cualquier momento según las necesidades de tu empresa. El cambio es inmediato.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-24 relative overflow-hidden">
+        <div class="absolute inset-0 bg-slate-900">
+            <div class="absolute inset-0 bg-gradient-to-br from-primary-900/50 to-slate-900"></div>
+            <div class="absolute top-0 left-0 w-full h-full overflow-hidden">
+                <div class="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-primary-500/20 rounded-full mix-blend-screen filter blur-3xl opacity-30 animate-blob"></div>
+                <div class="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-secondary-500/20 rounded-full mix-blend-screen filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+            </div>
+        </div>
+        <div class="container mx-auto px-6 relative z-10 text-center">
+            <h2 class="text-4xl md:text-5xl font-extrabold text-white mb-8 tracking-tight" data-aos="fade-up">
+                ¿Listo para transformar tu empresa?
+            </h2>
+            <p class="text-xl text-slate-300 mb-12 max-w-2xl mx-auto" data-aos="fade-up" data-aos-delay="100">
+                Únete a más de 500 empresas que ya gestionan su negocio de manera inteligente con nuestro ERP.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center" data-aos="fade-up" data-aos-delay="200">
+                <a href="https://erp.despegaperudigital.com/" class="px-8 py-4 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl font-bold text-lg shadow-xl shadow-primary-500/20 transition-all transform hover:-translate-y-1 flex items-center justify-center gap-2">
+                    Comenzar Ahora <i class="bi bi-arrow-right"></i>
+                </a>
+                <a href="#" class="px-8 py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 backdrop-blur-sm">
+                    Agendar Demo
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- WhatsApp Float -->
+    <a href="https://wa.me/51999999999" target="_blank" class="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#20ba5a] text-white p-4 rounded-full shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1 hover:scale-110 flex items-center justify-center group">
+        <i class="bi bi-whatsapp text-3xl"></i>
+        <span class="absolute right-full mr-4 bg-white text-slate-800 px-3 py-1 rounded-lg text-sm font-bold shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            ¿Consultas? Escríbenos
+        </span>
+    </a>
+
+    <!-- Exit Intent Modal -->
+    <div id="exit-modal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity opacity-0" id="exit-backdrop"></div>
+        <div class="absolute inset-0 flex items-center justify-center p-4">
+            <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full relative transform scale-95 opacity-0 transition-all duration-300" id="exit-content">
+                <button id="close-exit-modal" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                    <i class="bi bi-x-lg text-xl"></i>
+                </button>
+                <div class="p-8 text-center">
+                    <div class="w-16 h-16 bg-primary-50 text-primary-600 rounded-full flex items-center justify-center mx-auto mb-6 text-3xl animate-bounce">
+                        <i class="bi bi-gift-fill"></i>
+                    </div>
+                    <h3 class="text-3xl font-bold text-slate-900 mb-2">¡Espera! No te vayas aún</h3>
+                    <p class="text-slate-600 mb-6">Tenemos una oferta especial exclusiva para nuevos visitantes.</p>
+                    
+                    <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-6 text-left">
+                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                            <i class="bi bi-check-circle-fill text-green-500"></i>
+                            Demo Premium Gratis
+                        </h4>
+                        <p class="text-sm text-slate-500 mb-4">Acceso completo por 14 días sin tarjeta de crédito.</p>
+                        <h4 class="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                            <i class="bi bi-check-circle-fill text-green-500"></i>
+                            Asesoría Personalizada
+                        </h4>
+                        <p class="text-sm text-slate-500">30 min con un experto en implementación ERP.</p>
+                    </div>
+                    
+                    <a href="https://erp.despegaperudigital.com/" class="w-full block py-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold text-lg shadow-lg shadow-primary-500/30 transition-all transform hover:-translate-y-1">
+                        Reclamar Oferta Ahora
+                    </a>
+                    <button id="dismiss-exit" class="mt-4 text-sm text-slate-400 hover:text-slate-600 underline">
+                        No gracias, prefiero perder esta oportunidad
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-slate-50 pt-20 pb-10 border-t border-slate-200">
+        <div class="container mx-auto px-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+                <div class="col-span-1 md:col-span-1">
+                    <div class="flex items-center gap-2 mb-6">
+                        <div class="bg-primary-600 text-white p-2 rounded-lg">
+                            <i class="bi bi-grid-1x2-fill text-xl"></i>
+                        </div>
+                        <span class="text-2xl font-bold text-slate-900">ERP<span class="text-primary-600">System</span></span>
+                    </div>
+                    <p class="text-slate-500 text-sm mb-6">
+                        Soluciones tecnológicas integrales para el crecimiento empresarial.
+                    </p>
+                    <div class="flex gap-4">
+                        <a href="#" class="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-primary-50 hover:text-primary-600 transition-colors"><i class="bi bi-facebook"></i></a>
+                        <a href="#" class="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-primary-50 hover:text-primary-600 transition-colors"><i class="bi bi-linkedin"></i></a>
+                        <a href="#" class="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-primary-50 hover:text-primary-600 transition-colors"><i class="bi bi-instagram"></i></a>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-6">Producto</h4>
+                    <ul class="space-y-3 text-sm text-slate-500">
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">Facturación</a></li>
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">Contabilidad</a></li>
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">RR.HH.</a></li>
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">CRM</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-6">Recursos</h4>
+                    <ul class="space-y-3 text-sm text-slate-500">
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">Documentación</a></li>
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">API Reference</a></li>
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">Soporte</a></li>
+                        <li><a href="#" class="hover:text-primary-600 transition-colors">Blog</a></li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-slate-900 mb-6">Contacto</h4>
+                    <ul class="space-y-3 text-sm text-slate-500">
+                        <li class="flex items-start gap-3">
+                            <i class="bi bi-envelope text-primary-600"></i>
+                            contacto@erp-peru.com
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i class="bi bi-telephone text-primary-600"></i>
+                            +51 999 999 999
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <i class="bi bi-geo-alt text-primary-600"></i>
+                            Lima, Perú
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-slate-200 pt-8 text-center">
+                <p class="text-sm text-slate-400">&copy; 2025 ERP System. Todos los derechos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- AOS Script -->
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+    <script>
+        AOS.init({
+            once: true,
+            offset: 50,
+            duration: 800,
+        });
+
+        // Mobile Menu Logic
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const closeMenuBtn = document.getElementById('close-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        const mobileLinks = document.querySelectorAll('.mobile-link');
+
+        function toggleMenu() {
+            const isClosed = mobileMenu.classList.contains('translate-x-full');
+            if (isClosed) {
+                mobileMenu.classList.remove('translate-x-full');
+                document.body.style.overflow = 'hidden';
+            } else {
+                mobileMenu.classList.add('translate-x-full');
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        if(mobileMenuBtn) {
+            mobileMenuBtn.addEventListener('click', toggleMenu);
+            closeMenuBtn.addEventListener('click', toggleMenu);
+            
+            mobileLinks.forEach(link => {
+                link.addEventListener('click', toggleMenu);
+            });
+        }
+
+        // FAQ Logic
+        const faqItems = document.querySelectorAll('.faq-item');
+        faqItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const answer = item.querySelector('.faq-answer');
+                const icon = item.querySelector('.bi-plus-lg');
+                
+                // Close others
+                faqItems.forEach(otherItem => {
+                    if (otherItem !== item) {
+                        otherItem.querySelector('.faq-answer').classList.add('hidden');
+                        otherItem.querySelector('.bi-plus-lg').classList.remove('rotate-45');
+                        otherItem.querySelector('.bi-plus-lg').classList.remove('transform');
+                        otherItem.classList.remove('border-primary-200');
+                    }
+                });
+
+                // Toggle current
+                answer.classList.toggle('hidden');
+                icon.classList.toggle('transform');
+                icon.classList.toggle('rotate-45');
+                item.classList.toggle('border-primary-200');
+            });
+        });
+
+        // Exit Intent Logic
+        const exitModal = document.getElementById('exit-modal');
+        const exitBackdrop = document.getElementById('exit-backdrop');
+        const exitContent = document.getElementById('exit-content');
+        const closeExitBtn = document.getElementById('close-exit-modal');
+        const dismissExitBtn = document.getElementById('dismiss-exit');
+        let hasShownExitModal = false;
+
+        const showExitModal = () => {
+            if (hasShownExitModal) return;
+            hasShownExitModal = true;
+            exitModal.classList.remove('hidden');
+            // Small delay for animations
+            setTimeout(() => {
+                exitBackdrop.classList.remove('opacity-0');
+                exitContent.classList.remove('scale-95', 'opacity-0');
+                exitContent.classList.add('scale-100', 'opacity-100');
+            }, 10);
+            localStorage.setItem('exitModalShown', 'true');
+        };
+
+        const hideExitModal = () => {
+            exitBackdrop.classList.add('opacity-0');
+            exitContent.classList.remove('scale-100', 'opacity-100');
+            exitContent.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                exitModal.classList.add('hidden');
+            }, 300);
+        };
+
+        // Check if already shown in session
+        if (!localStorage.getItem('exitModalShown')) {
+            document.addEventListener('mouseleave', (e) => {
+                if (e.clientY <= 0) {
+                    showExitModal();
+                }
+            });
+        }
+
+        if(closeExitBtn) closeExitBtn.addEventListener('click', hideExitModal);
+        if(dismissExitBtn) dismissExitBtn.addEventListener('click', hideExitModal);
+        if(exitBackdrop) exitBackdrop.addEventListener('click', hideExitModal);
+    </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+RewriteEngine On
+RewriteBase /
+
+# Fix for frontend missing slash in API_URL
+# Redirects apilogin.php -> api/login.php, apiusuarios.php -> api/usuarios.php, etc.
+RewriteRule ^api([a-zA-Z0-9_]+\.php)$ api/$1 [L,QSA]
+
+# Handle Authorization header
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]

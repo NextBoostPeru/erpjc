@@ -1,0 +1,81 @@
+Consideraciones: 
+Control de quién puede:
+•	Subir documentos 
+•	Cambiar estados 
+•	Comentarios 
+
+Guardar un historial por cada punto del checklist:
+•	Quién cambió el estado
+•	Fecha del cambio
+•	Estado anterior vs estado nuevo mediante grafico de escala por ejemplo
+•	Quién subió o eliminó documentos
+
+
+Gestión por empresas y normas aplicables
+•	El sistema debe permitir registrar varias empresas.
+•	Al momento de registrar o editar una empresa, se debe seleccionar qué normas ISO aplican para dicha empresa (ejemplo: ISO 9001, 14001, 45001, 37001, etc.).
+•	Según las normas seleccionadas, el sistema debe mostrar únicamente los checklist correspondientes a esas normas para esa empresa.
+•	Este filtro debe ser exclusivo por empresa (cada empresa puede tener normas distintas).
+
+Checklist por norma
+•	Cada norma ISO estará dividida en sus puntos o numerales (ejemplo: 4.1, 4.2, 5.1, etc.).
+•	Para cada punto del checklist, el sistema debe permitir:
+o	Subir documentos en los siguientes formatos:
+	PDF
+	Word
+	Excel
+	Archivos comprimidos (ZIP/RAR)
+o	Registrar automáticamente la fecha de subida de cada documento.
+o	Permitir subir uno o varios documentos por punto.
+
+Estados por punto del checklist
+Agregar campos por punto:
+•	Fecha programada
+•	Fecha límite
+Enviar alertas automáticas cuando:
+•	Un punto esté por vencer
+•	Pase a estado “retrasado”
+Cada punto de la norma debe tener un estado seleccionable editable, con las siguientes opciones:
+•	Programado
+•	En proceso
+•	Ejecutado
+•	Retrasado
+•	No aplica
+Este estado debe poder modificarse conforme avance la implementación.
+Configurar que ciertos puntos no puedan marcarse como “Ejecutado” si no tienen documentos cargados.
+Considerar una fila para añadir comentarios y observaciones que no se jale al REPORTE MENSUAL (solo visualizado en el ERP)
+
+Seguimiento y avance mensual
+•	El sistema debe:
+o	Contabilizar cuántos puntos están en cada estado (ejemplo: 10 ejecutados, 5 en proceso, 2 retrasados, etc.).
+o	Calcular automáticamente un porcentaje de avance mensual por checklist y por norma, según los estados definidos.
+•	Este avance debe mostrarse mediante:
+o	Gráficos (por ejemplo, gráficos de barras o similares).
+o	Visualización clara por empresa, por norma y por mes.
+
+Descarga de documentación
+•	Debe existir una opción para descargar todos los documentos cargados:
+o	Ordenados según los puntos de la norma.
+o	Preferentemente en un archivo comprimido único (ZIP), manteniendo la estructura por norma y por numeral.
+
+Generación de reporte mensual automático
+El sistema debe incluir un botón para “Generar Reporte Mensual”, que genere un documento descargable (PDF) con la siguiente estructura:
+Portada:
+•	Título: REPORTE MENSUAL
+•	Logo de la empresa JC
+•	Nombre de la empresa
+•	Norma(s) ISO evaluada(s)
+•	Mes y año del reporte
+•	Codigo de reporte
+•	Responsable del reporte
+
+Contenido del reporte:
+•	Introducción (campo editable)
+•	Objetivos (campo editable)
+•	Porcentaje de avance del checklist (calculado automáticamente)
+•	Gráficos de avance (los mismos que se visualizan en el sistema)
+•	Observaciones (campo editable)
+•	Recomendaciones (campo editable)
+•	Conclusiones (campo editable)
+Toda la información automática (porcentajes, estados y gráficos) debe jalarse directamente del checklist trabajado en el sistema.
+
