@@ -37,6 +37,11 @@ const RegistroVentas = () => {
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [uploadingId, setUploadingId] = useState(null);
+    const [showCuotaUploadModal, setShowCuotaUploadModal] = useState(false);
+    const [cuotaRegId, setCuotaRegId] = useState(null);
+    const [cuotas, setCuotas] = useState([]);
+    const [cuotaFiles, setCuotaFiles] = useState({});
+    const [uploadingCuotaIds, setUploadingCuotaIds] = useState([]);
 
     const [formData, setFormData] = useState({
         fecha_emision: new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Lima' }).format(new Date()),
@@ -92,6 +97,20 @@ const RegistroVentas = () => {
         setShowUploadModal(true);
     };
 
+    const handleOpenCuotaUpload = async (reg) => {
+        setCuotaRegId(reg.id);
+        setShowCuotaUploadModal(true);
+        setCuotas([]);
+        setCuotaFiles({});
+        try {
+            const res = await axios.get(`${API_URL}registro_ventas.php?action=listar_cuotas&id=${reg.id}`, { headers });
+            const rows = res.data?.data || [];
+            setCuotas(rows);
+        } catch (error) {
+            toast.error("Error cargando cuotas");
+        }
+    };
+
     const handleUploadFiles = async (e) => {
         e.preventDefault();
         try {
@@ -133,6 +152,48 @@ const RegistroVentas = () => {
         } catch (error) {
             toast.error(error.response?.data?.message || "Error al subir archivos");
         }
+    };
+
+    const handleCuotaFileChange = (cuotaId, filesList) => {
+        setCuotaFiles(prev => ({ ...prev, [cuotaId]: filesList }));
+    };
+
+    const handleUploadCuotaFiles = async (cuotaId) => {
+        try {
+            setUploadingCuotaIds(prev => [...prev, cuotaId]);
+            const form = new FormData();
+            form.append('cuota_id', cuotaId);
+            const filesList = cuotaFiles[cuotaId];
+            if (!filesList || filesList.length === 0) {
+                toast.error("Seleccione uno o más archivos");
+                return;
+            }
+            Array.from(filesList).forEach(f => form.append('archivos_cuota[]', f));
+            const res = await axios.post(`${API_URL}registro_ventas.php?action=subir_adjuntos_cuota`, form, {
+                headers: { ...headers, 'Content-Type': 'multipart/form-data' }
+            });
+            toast.success(res.data?.message || "Adjuntos subidos");
+            // Refresh cuotas to reflect new attachments
+            const refreshed = await axios.get(`${API_URL}registro_ventas.php?action=listar_cuotas&id=${cuotaRegId}`, { headers });
+            setCuotas(refreshed.data?.data || []);
+            setCuotaFiles(prev => ({ ...prev, [cuotaId]: [] }));
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Error subiendo adjuntos de cuota");
+        } finally {
+            setUploadingCuotaIds(prev => prev.filter(id => id !== cuotaId));
+        }
+    };
+
+    const uploadAllSelectedCuotaFiles = async () => {
+        const entries = Object.entries(cuotaFiles).filter(([_, files]) => files && files.length > 0);
+        if (entries.length === 0) {
+            toast.error("No hay archivos seleccionados");
+            return;
+        }
+        for (const [cuotaId] of entries) {
+            await handleUploadCuotaFiles(Number(cuotaId));
+        }
+        toast.success("Adjuntos de cuotas subidos");
     };
 
     useEffect(() => {
@@ -366,7 +427,7 @@ const RegistroVentas = () => {
             };
         }
 
-        const activos = registros.filter(r => r.estado !== 'Anulado');
+        const activos = registros.filter(r => r.estado !== 'Anulado' && r.estado !== 'Generado');
         return {
             total_ventas: activos.reduce((sum, r) => sum + parseFloat(r.total_importe || 0), 0),
             total_igv: activos.reduce((sum, r) => sum + parseFloat(r.total_igv || 0), 0),
@@ -573,6 +634,15 @@ const RegistroVentas = () => {
                                                     onClick={() => handleOpenUpload(reg)}
                                                     className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
                                                     title="Adjuntar Comprobantes"
+                                                >
+                                                    <Upload size={18} />
+                                                </button>
+                                            )}
+                                            {reg.estado !== 'Anulado' && (
+                                                <button 
+                                                    onClick={() => handleOpenCuotaUpload(reg)}
+                                                    className="text-teal-600 hover:text-teal-900 p-1 hover:bg-teal-50 rounded transition-colors"
+                                                    title="Adjuntar por Cuota"
                                                 >
                                                     <Upload size={18} />
                                                 </button>
@@ -890,6 +960,105 @@ const RegistroVentas = () => {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Adjuntar por Cuota */}
+            {showCuotaUploadModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-xl font-bold text-gray-800">Adjuntar documentos por cuota</h2>
+                                <span className="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-700">{cuotas.length} cuotas</span>
+                            </div>
+                            <button onClick={() => { setShowCuotaUploadModal(false); setCuotaRegId(null); setCuotas([]); }} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={uploadAllSelectedCuotaFiles}
+                                    className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                                    disabled={Object.values(cuotaFiles).every(f => !f || f.length === 0)}
+                                >
+                                    <Upload size={16} /> Subir seleccionados
+                                </button>
+                            </div>
+                            {cuotas.length === 0 ? (
+                                <p className="text-gray-500">No hay cuotas registradas para esta venta.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cuota</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Pago</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adjuntos</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {cuotas.map(c => (
+                                                <tr key={c.id}>
+                                                    <td className="px-6 py-4 text-sm text-gray-700">{c.cuota_nro}</td>
+                                                    <td className="px-6 py-4 text-sm text-gray-500">{c.fecha_pago}</td>
+                                                    <td className="px-6 py-4 text-sm text-gray-900">S/ {parseFloat(c.monto).toFixed(2)}</td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">{(c.adjuntos || []).length} adjuntos</span>
+                                                            {(c.adjuntos || []).map((path, idx) => {
+                                                                const name = String(path).split('/').pop();
+                                                                return (
+                                                                    <a key={idx} href={`${API_URL}${path}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100">
+                                                                        <Paperclip size={14} />
+                                                                        <span className="max-w-[150px] truncate" title={name}>{name}</span>
+                                                                    </a>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <label className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
+                                                                <Upload size={16} className="mr-2" />
+                                                                Seleccionar archivos
+                                                                <input
+                                                                    type="file"
+                                                                    multiple
+                                                                    accept=".pdf,.jpg,.jpeg,.png"
+                                                                    onChange={e => handleCuotaFileChange(c.id, e.target.files)}
+                                                                    className="hidden"
+                                                                />
+                                                            </label>
+                                                            <button
+                                                                onClick={() => handleUploadCuotaFiles(c.id)}
+                                                                className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                                                                disabled={uploadingCuotaIds.includes(c.id) || !(cuotaFiles[c.id] && cuotaFiles[c.id].length > 0)}
+                                                            >
+                                                                <Upload size={16} /> Subir
+                                                            </button>
+                                                        </div>
+                                                        {cuotaFiles[c.id] && cuotaFiles[c.id].length > 0 && (
+                                                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                                                {Array.from(cuotaFiles[c.id]).map((f, idx) => (
+                                                                    <span key={idx} className="inline-flex items-center px-2 py-1 text-xs rounded bg-gray-100 text-gray-700 max-w-[180px] truncate" title={f.name}>
+                                                                        {f.name}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

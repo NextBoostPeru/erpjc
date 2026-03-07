@@ -41,6 +41,8 @@ try {
                 handleImport($conn);
             } elseif (isset($_GET['bulk']) && $_GET['bulk'] === 'true') {
                 handleBulkSave($conn);
+            } elseif (isset($_GET['reset']) && $_GET['reset'] === 'true') {
+                handleReset($conn);
             } else {
                 handleCreate($conn);
             }
@@ -205,6 +207,11 @@ function handleUpdate($conn) {
              // For simplicity, if we provide hours, we treat it as attendance.
         }
 
+        $overrideOvertime = (isset($data->horas_extras) && is_numeric($data->horas_extras)) ? (float)$data->horas_extras : null;
+        if ($overrideOvertime !== null) {
+            $hours['overtime'] = $overrideOvertime;
+        }
+
         $sql = "UPDATE asistencias SET hora_entrada = :he, hora_salida = :hs, horas_trabajadas = :ht, horas_extras = :hex, observaciones = :obs, estado = :estado WHERE id = :id";
         $stmt = $conn->prepare($sql);
         $stmt->execute([
@@ -226,6 +233,27 @@ function handleDelete($conn) {
     $stmt = $conn->prepare("DELETE FROM asistencias WHERE id = ?");
     $stmt->execute([$id]);
     echo json_encode(["message" => "Asistencia eliminada"]);
+}
+
+function handleReset($conn) {
+    $data = json_decode(file_get_contents("php://input"));
+    $date = $data->date ?? '';
+    $area = $data->area ?? '';
+    if (empty($date)) {
+        throw new Exception("Fecha requerida");
+    }
+    $sql = "UPDATE asistencias a 
+            JOIN colaboradores c ON a.colaborador_id = c.id
+            SET a.hora_entrada = NULL, a.hora_salida = NULL, a.horas_trabajadas = 0, a.horas_extras = 0, a.observaciones = '', a.estado = 'Pendiente', a.validado_por = NULL
+            WHERE a.fecha = :date";
+    $params = [':date' => $date];
+    if (!empty($area)) {
+        $sql .= " AND c.area = :area";
+        $params[':area'] = $area;
+    }
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+    echo json_encode(["message" => "Día reseteado", "count" => $stmt->rowCount()]);
 }
 
 function handleImport($conn) {
@@ -403,10 +431,11 @@ function handleMonthlyReport($conn) {
 
     $sql = "SELECT 
                 c.id, c.nombres, c.apellidos, c.documento_numero,
-                COUNT(a.id) as dias_trabajados,
-                SUM(a.horas_trabajadas) as total_horas,
-                SUM(a.horas_extras) as total_extras,
-                SUM(CASE WHEN a.hora_entrada > '09:15:00' THEN 1 ELSE 0 END) as tardanzas
+                COALESCE(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND a.estado NOT IN ('Falta','Licencia','Vacaciones') THEN 1 ELSE 0 END), 0) as dias_trabajados,
+                COALESCE(SUM(a.horas_trabajadas), 0) as total_horas,
+                COALESCE(SUM(a.horas_extras), 0) as total_extras,
+                COALESCE(SUM(CASE WHEN a.hora_entrada > '09:15:00' THEN 1 ELSE 0 END), 0) as tardanzas,
+                COALESCE(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND DAYOFWEEK(a.fecha) = 1 AND a.estado NOT IN ('Falta','Licencia','Vacaciones') THEN 1 ELSE 0 END), 0) as dominicales
             FROM colaboradores c
             LEFT JOIN asistencias a ON c.id = a.colaborador_id AND MONTH(a.fecha) = :m AND YEAR(a.fecha) = :y
             GROUP BY c.id

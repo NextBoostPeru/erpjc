@@ -24,6 +24,7 @@ try {
             $page = isset($_GET['page']) ? (int)$_GET['page'] : null;
             $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
             $search = isset($_GET['search']) ? $_GET['search'] : '';
+            $categoria = isset($_GET['categoria']) ? strtolower(trim($_GET['categoria'])) : '';
 
             if ($page) {
                 $offset = ($page - 1) * $limit;
@@ -36,11 +37,16 @@ try {
                     $where[] = "(p.nombre LIKE :search OR p.codigo_interno LIKE :search OR p.codigo_barras LIKE :search)";
                     $params[':search'] = "%$search%";
                 }
+                if ($categoria) {
+                    $where[] = "LOWER(c.nombre) LIKE :cat";
+                    $params[':cat'] = "%$categoria%";
+                }
                 
                 $whereSql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
                 
-                // Count Total
-                $countSql = "SELECT COUNT(*) FROM productos p $whereSql";
+                $countSql = $categoria 
+                    ? "SELECT COUNT(*) FROM productos p LEFT JOIN categorias c ON p.categoria_id = c.id $whereSql"
+                    : "SELECT COUNT(*) FROM productos p $whereSql";
                 $stmtCount = $conn->prepare($countSql);
                 $stmtCount->execute($params);
                 $total = $stmtCount->fetchColumn();
@@ -76,17 +82,26 @@ try {
             } else {
                 // Comportamiento original (listar todo o buscar simple)
                 $search = isset($_GET['search']) ? $_GET['search'] : '';
+                $categoria = isset($_GET['categoria']) ? strtolower(trim($_GET['categoria'])) : '';
                 
-                if ($search) {
+                if ($search || $categoria) {
                     $sql = "SELECT p.*, c.nombre as categoria_nombre, m.nombre as marca_nombre 
                             FROM productos p
                             LEFT JOIN categorias c ON p.categoria_id = c.id
                             LEFT JOIN marcas m ON p.marca_id = m.id
-                            WHERE p.nombre LIKE :search OR p.codigo_interno LIKE :search OR p.codigo_barras LIKE :search
+                            WHERE " . (
+                                $search && $categoria
+                                ? "(p.nombre LIKE :search OR p.codigo_interno LIKE :search OR p.codigo_barras LIKE :search) AND LOWER(c.nombre) LIKE :cat"
+                                : ($search
+                                    ? "(p.nombre LIKE :search OR p.codigo_interno LIKE :search OR p.codigo_barras LIKE :search)"
+                                    : "LOWER(c.nombre) LIKE :cat"
+                                  )
+                            ) . "
                             ORDER BY p.nombre
                             LIMIT 50";
                     $stmt = $conn->prepare($sql);
-                    $stmt->bindValue(':search', "%$search%");
+                    if ($search) $stmt->bindValue(':search', "%$search%");
+                    if ($categoria) $stmt->bindValue(':cat', "%$categoria%");
                 } else {
                     $sql = "SELECT p.*, c.nombre as categoria_nombre, m.nombre as marca_nombre 
                             FROM productos p

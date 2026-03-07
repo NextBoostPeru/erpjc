@@ -29,6 +29,66 @@ const GestionPlanillas = () => {
     "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
     "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
   ];
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+
+  const getAfpRates = (regimen, comisionType = 'Flujo') => {
+    if (regimen === 'ONP') return { aporte: 0.13, seguro: 0.0, comision: 0.0 };
+    const aporte = 0.10;
+    const seguro = 0.0170;
+    let comision = 0.01;
+    switch (regimen) {
+      case 'AFP Integra':
+        comision = comisionType === 'Flujo' ? 0.0079 : 0.0000;
+        break;
+      case 'AFP Prima':
+        comision = comisionType === 'Flujo' ? 0.0160 : 0.0018;
+        break;
+      case 'AFP Profuturo':
+        comision = comisionType === 'Flujo' ? 0.0169 : 0.0067;
+        break;
+      case 'AFP Habitat':
+        comision = comisionType === 'Flujo' ? 0.0147 : 0.0023;
+        break;
+      default:
+        comision = 0.01;
+        break;
+    }
+    return { aporte, seguro, comision };
+  };
+  const calcAfpDetalle = (d) => {
+    const regimen = d.regimen_pensionario || 'ONP';
+    const base = parseFloat(d.total_bruto || 0);
+    const r = getAfpRates(regimen, 'Flujo');
+    if (regimen === 'ONP') {
+      const aporte = +(base * r.aporte).toFixed(2);
+      return {
+        tipo: 'ONP',
+        aporte_pct: +(r.aporte * 100).toFixed(2),
+        seguro_pct: 0.0,
+        comision_pct: 0.0,
+        aporte,
+        seguro: 0.0,
+        comision: 0.0,
+        total: aporte
+      };
+    } else {
+      const aporte = +(base * r.aporte).toFixed(2);
+      const seguro = +(base * r.seguro).toFixed(2);
+      const comision = +(base * r.comision).toFixed(2);
+      return {
+        tipo: regimen,
+        aporte_pct: +(r.aporte * 100).toFixed(2),
+        seguro_pct: +(r.seguro * 100).toFixed(2),
+        comision_pct: +(r.comision * 100).toFixed(2),
+        aporte,
+        seguro,
+        comision,
+        total: +(aporte + seguro + comision).toFixed(2)
+      };
+    }
+  };
 
   useEffect(() => {
     fetchPlanillas();
@@ -124,7 +184,8 @@ const GestionPlanillas = () => {
   };
 
   const exportExcel = () => {
-    const data = details.map(d => ({
+    const data = details.map((d, idx) => ({
+      'N° Orden': idx + 1,
       'DNI': d.documento_numero,
       'Colaborador': `${d.apellidos}, ${d.nombres}`,
       'Sueldo Base': d.sueldo_base,
@@ -186,20 +247,40 @@ const GestionPlanillas = () => {
    const exportPlameJOR = () => {
      let content = "";
      details.forEach(d => {
-       const dias = d.dias_trabajados;
-       const horas = dias * 8; // Estimado Jornada Ordinaria
+      const dias = d.dias_trabajados;
+      const horas = parseFloat(d.horas_ordinarias || (dias * 8)); // Usa horas reales si están disponibles
        
        const he_decimal = parseFloat(d.horas_extras || 0);
        const he_horas = Math.floor(he_decimal);
        const he_min = Math.round((he_decimal - he_horas) * 60);
        
        // Estructura: TipoDoc|NumDoc|DiasLab|DiasNoLab|DiasSub|HrsOrd|MinOrd|HrsExt|MinExt
-       content += `01|${d.documento_numero}|${dias}|0|0|${horas}|0|${he_horas}|${he_min}\n`;
+      const ord_horas = Math.floor(horas);
+      const ord_min = Math.round((horas - ord_horas) * 60);
+      content += `01|${d.documento_numero}|${dias}|0|0|${ord_horas}|${ord_min}|${he_horas}|${he_min}\n`;
      });
      const ruc = selectedPlanilla.empresa_ruc || '00000000000';
      const filename = `0601${selectedPlanilla.anio}${String(selectedPlanilla.mes).padStart(2, '0')}${ruc}.jor`;
      downloadTxt(content, filename);
    };
+
+  const recalculatePlanilla = async () => {
+    try {
+      setLoading(true);
+      await axios.post(`${API_URL}planillas.php?action=recalculate`, { id: selectedPlanilla.id });
+      toast.success('Planilla recalculada');
+      // Refrescar detalles y encabezado
+      const response = await axios.get(`${API_URL}planillas.php?id=${selectedPlanilla.id}`);
+      setSelectedPlanilla(response.data.header);
+      setDetails(Array.isArray(response.data.details) ? response.data.details : []);
+      // Refrescar lista para totales
+      fetchPlanillas();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Error al recalcular planilla');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calculated Stats
   const stats = {
@@ -266,6 +347,7 @@ const GestionPlanillas = () => {
           <table className="w-full whitespace-nowrap">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">N° Orden</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Periodo</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Tipo</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Ingresos</th>
@@ -277,13 +359,14 @@ const GestionPlanillas = () => {
             <tbody className="divide-y divide-gray-200 bg-white">
               {planillas.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                     No hay planillas generadas aún.
                   </td>
                 </tr>
               ) : (
-                planillas.map((p) => (
+                planillas.map((p, idx) => (
                   <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-gray-900">{idx + 1}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center">
                         <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mr-3">
@@ -310,13 +393,23 @@ const GestionPlanillas = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium">
-                      <button 
-                        onClick={() => viewDetails(p)}
-                        className="text-blue-600 hover:text-blue-900 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"
-                        title="Ver Detalles"
-                      >
-                        <Eye size={18} />
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button 
+                          onClick={() => viewDetails(p)}
+                          className="text-blue-600 hover:text-blue-900 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"
+                          title="Ver / Editar"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          disabled={!(p.mes === currentMonth && p.anio === currentYear)}
+                          className={`p-2 rounded-lg transition-colors ${p.mes === currentMonth && p.anio === currentYear ? 'text-red-600 bg-red-50 hover:text-red-800 hover:bg-red-100' : 'text-gray-400 bg-gray-100 cursor-not-allowed'}`}
+                          title={p.mes === currentMonth && p.anio === currentYear ? 'Eliminar planilla del mes' : 'Solo se puede eliminar la planilla del mes actual'}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -428,6 +521,15 @@ const GestionPlanillas = () => {
                     <Check size={18} className="mr-2" /> Cerrar
                   </button>
                  )}
+                 {selectedPlanilla.estado === 'Borrador' && (
+                  <button
+                    onClick={recalculatePlanilla}
+                    className="flex-1 md:flex-none flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                    title="Recalcular planilla con asistencias del mes"
+                  >
+                    <Calculator size={18} className="mr-2" /> Volver a calcular
+                  </button>
+                 )}
                  {selectedPlanilla.estado === 'Cerrado' && (
                   <>
                     <button 
@@ -475,12 +577,16 @@ const GestionPlanillas = () => {
                 <table className="w-full text-sm divide-y divide-gray-200">
                   <thead className="bg-gray-50 sticky top-0 z-10 shadow-sm">
                     <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">N° Orden</th>
                       <th className="px-4 py-3 text-left font-semibold text-gray-500 uppercase tracking-wider">Colaborador</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Sueldo Base</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Asig. Fam.</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">H.E (Monto)</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Bonos</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Comisiones</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Essalud (Aporte)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Vida Ley (Aporte)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">SCTR (Aporte)</th>
                       <th className="px-4 py-3 text-right font-bold text-gray-700 uppercase tracking-wider bg-gray-100">Total Bruto</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">AFP/ONP</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">5ta Cat.</th>
@@ -491,8 +597,9 @@ const GestionPlanillas = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {details.map((d) => (
+                    {details.map((d, idx) => (
                       <tr key={d.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-gray-900">{idx + 1}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="font-medium text-gray-900">{d.apellidos}, {d.nombres}</div>
                           <div className="text-gray-500 text-xs flex items-center gap-1">
@@ -530,8 +637,31 @@ const GestionPlanillas = () => {
                           </>
                         )}
 
+                        {/* Aportes del empleador (siempre visibles) */}
+                        <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.essalud_aporte || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.vida_ley_aporte || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.sctr_aporte || 0).toFixed(2)}</td>
+
                         <td className="px-4 py-3 text-right font-bold bg-gray-50 text-gray-800">{parseFloat(d.total_bruto).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.afp_onp_monto).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right text-gray-600">
+                          {(d.afp_detalle || calcAfpDetalle(d)) ? (
+                            <div className="text-xs text-gray-700 text-right">
+                              <div className="font-medium">{(d.afp_detalle || calcAfpDetalle(d)).tipo}</div>
+                              {(d.afp_detalle || calcAfpDetalle(d)).tipo !== 'ONP' ? (
+                                <>
+                                  <div>Aporte {parseFloat((d.afp_detalle || calcAfpDetalle(d)).aporte_pct).toFixed(2)}%: S/ {parseFloat((d.afp_detalle || calcAfpDetalle(d)).aporte).toFixed(2)}</div>
+                                  <div>Seguro {parseFloat((d.afp_detalle || calcAfpDetalle(d)).seguro_pct).toFixed(2)}%: S/ {parseFloat((d.afp_detalle || calcAfpDetalle(d)).seguro).toFixed(2)}</div>
+                                  <div>Comisión {parseFloat((d.afp_detalle || calcAfpDetalle(d)).comision_pct).toFixed(2)}%: S/ {parseFloat((d.afp_detalle || calcAfpDetalle(d)).comision).toFixed(2)}</div>
+                                  <div className="mt-1 font-semibold">Total: S/ {parseFloat((d.afp_detalle || calcAfpDetalle(d)).total).toFixed(2)}</div>
+                                </>
+                              ) : (
+                                <div>Aporte {parseFloat((d.afp_detalle || calcAfpDetalle(d)).aporte_pct).toFixed(2)}%: S/ {parseFloat((d.afp_detalle || calcAfpDetalle(d)).aporte).toFixed(2)}</div>
+                              )}
+                            </div>
+                          ) : (
+                            parseFloat(d.afp_onp_monto).toFixed(2)
+                          )}
+                        </td>
                         
                         {/* 5ta Categoria Editable */}
                         {selectedPlanilla.estado === 'Borrador' ? (
@@ -578,12 +708,16 @@ const GestionPlanillas = () => {
                   </tbody>
                   <tfoot className="bg-gray-100 font-bold sticky bottom-0 z-10 shadow-[0_-2px_4px_rgba(0,0,0,0.05)]">
                     <tr>
+                      <td className="px-4 py-3"></td>
                       <td className="px-4 py-3">TOTALES</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.sueldo_base), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.asignacion_familiar_monto || 0), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.monto_horas_extras), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.bonos), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.comisiones), 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.essalud_aporte || 0), 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.vida_ley_aporte || 0), 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.sctr_aporte || 0), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right text-gray-800">{parseFloat(selectedPlanilla.total_ingresos).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.afp_onp_monto), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right text-red-600">{details.reduce((acc, d) => acc + parseFloat(d.quinta_categoria_monto || 0), 0).toFixed(2)}</td>

@@ -37,10 +37,10 @@ const SupervisionCompras = () => {
       const params = { start: dateRange.start, end: dateRange.end };
 
       const [relRes, supRes, overRes, appRes] = await Promise.all([
-        axios.get(`${API_URL}/supervision_compras.php?action=relevant_purchases`, { params, headers }),
-        axios.get(`${API_URL}/supervision_compras.php?action=supplier_comparison`, { params, headers }),
-        axios.get(`${API_URL}/supervision_compras.php?action=overcosts`, { params, headers }),
-        axios.get(`${API_URL}/supervision_compras.php?action=get_approvals`, { headers })
+        axios.get(`${API_URL}supervision_compras.php?action=relevant_purchases`, { params, headers }),
+        axios.get(`${API_URL}supervision_compras.php?action=supplier_comparison`, { params, headers }),
+        axios.get(`${API_URL}supervision_compras.php?action=overcosts`, { params, headers }),
+        axios.get(`${API_URL}supervision_compras.php?action=get_approvals`, { headers })
       ]);
 
       const relData = relRes?.data;
@@ -66,13 +66,13 @@ const SupervisionCompras = () => {
   const handleApproval = async (id, status) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/supervision_compras.php?action=manage_approval`, 
+      await axios.post(`${API_URL}supervision_compras.php?action=manage_approval`, 
         { id, status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       toast.success(`Solicitud ${status === 'aprobado' ? 'aprobada' : 'rechazada'}`);
       // Refresh approvals
-      const res = await axios.get(`${API_URL}/supervision_compras.php?action=get_approvals`, {
+      const res = await axios.get(`${API_URL}supervision_compras.php?action=get_approvals`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setApprovals(res.data);

@@ -68,9 +68,9 @@ if (isset($conn)) $conn = null;
 
 function getHeadcount($conn) {
     // Total Active Employees by Area
-    $sql = "SELECT area, COUNT(*) as cantidad 
+    $sql = "SELECT COALESCE(NULLIF(area, ''), 'Sin Área') as area, COUNT(*) as cantidad 
             FROM colaboradores 
-            WHERE estado = 'Activo' 
+            WHERE (estado = 'Activo' OR estado IS NULL OR estado = '') 
             GROUP BY area 
             ORDER BY cantidad DESC";
     $stmt = $conn->prepare($sql);
@@ -78,15 +78,21 @@ function getHeadcount($conn) {
     $byArea = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Total Count
-    $sqlTotal = "SELECT COUNT(*) as total FROM colaboradores WHERE estado = 'Activo'";
+    $sqlTotal = "SELECT COUNT(*) as total FROM colaboradores WHERE (estado = 'Activo' OR estado IS NULL OR estado = '')";
     $stmtTotal = $conn->prepare($sqlTotal);
     $stmtTotal->execute();
     $total = $stmtTotal->fetch(PDO::FETCH_ASSOC)['total'];
 
     // By Contract Type
-    $sqlContract = "SELECT tipo_contrato, COUNT(*) as cantidad 
+    $sqlContract = "SELECT 
+                        CASE 
+                            WHEN tipo_contrato = 'Plazo Determinado' THEN 'Plazo Fijo' 
+                            WHEN tipo_contrato IS NULL OR tipo_contrato = '' THEN 'Sin tipo'
+                            ELSE tipo_contrato 
+                        END as tipo_contrato, 
+                        COUNT(*) as cantidad 
                     FROM colaboradores 
-                    WHERE estado = 'Activo' 
+                    WHERE (estado = 'Activo' OR estado IS NULL OR estado = '') 
                     GROUP BY tipo_contrato";
     $stmtContract = $conn->prepare($sqlContract);
     $stmtContract->execute();

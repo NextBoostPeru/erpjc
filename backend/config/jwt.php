@@ -1,10 +1,24 @@
 <?php
-require_once __DIR__ . '/../vendor/autoload.php';
+// Manually include JWT library since composer is missing/broken
+require_once __DIR__ . '/../api/helpers/jwt/src/BeforeValidException.php';
+require_once __DIR__ . '/../api/helpers/jwt/src/ExpiredException.php';
+require_once __DIR__ . '/../api/helpers/jwt/src/SignatureInvalidException.php';
+require_once __DIR__ . '/../api/helpers/jwt/src/Key.php';
+require_once __DIR__ . '/../api/helpers/jwt/src/JWT.php';
+
+// Attempt to load composer autoloader, but don't crash if it fails deeply
+if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    try {
+        @require_once __DIR__ . '/../vendor/autoload.php';
+    } catch (Throwable $e) {
+        // Ignorar errores de carga de composer si fallan dependencias específicas
+    }
+}
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
 class JWTHandler {
-    private $secret_key = "TU_SECRETO_SUPER_SEGURO_CAMBIALO_EN_PROD"; // En prod usar variable de entorno
+    private $secret_key = "9f3e4b0c7d2a6e1f8b5c9d0a4e7f3c1b2a6d8e4f9c0b7a5d3e1f6c8b2a9d4e7f"; // En prod usar variable de entorno
     private $algorithm = 'HS256';
 
     public function generateToken($data) {

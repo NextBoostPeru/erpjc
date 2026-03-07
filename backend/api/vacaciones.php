@@ -17,7 +17,10 @@ $method = $_SERVER['REQUEST_METHOD'];
 try {
     switch ($method) {
         case 'GET':
-            if (isset($_GET['balance']) && isset($_GET['colaborador_id'])) {
+            if (isset($_GET['action']) && $_GET['action'] === 'approvers') {
+                ensureApproverTable($conn);
+                handleApproversList($conn);
+            } elseif (isset($_GET['balance']) && isset($_GET['colaborador_id'])) {
                 handleGetBalance($conn);
             } else {
                 handleList($conn);
@@ -25,7 +28,12 @@ try {
             break;
 
         case 'POST':
-            handleCreate($conn);
+            if (isset($_GET['action']) && $_GET['action'] === 'approvers') {
+                ensureApproverTable($conn);
+                handleApproverCreate($conn);
+            } else {
+                handleCreate($conn);
+            }
             break;
 
         case 'PUT':
@@ -33,7 +41,12 @@ try {
             break;
 
         case 'DELETE':
-            handleDelete($conn);
+            if (isset($_GET['action']) && $_GET['action'] === 'approvers') {
+                ensureApproverTable($conn);
+                handleApproverDelete($conn);
+            } else {
+                handleDelete($conn);
+            }
             break;
     }
 } catch (Exception $e) {
@@ -163,6 +176,28 @@ function handleUpdate($conn) {
         $action = $data->action;
 
         try {
+            // Permission check
+            if ($action === 'approve_rrhh') {
+                if (!hasApprovalRight($conn, $uid, 'RRHH')) {
+                    http_response_code(403);
+                    echo json_encode(["message" => "No autorizado para aprobar como RRHH"]);
+                    return;
+                }
+            } elseif ($action === 'approve_gerente') {
+                if (!hasApprovalRight($conn, $uid, 'Gerente')) {
+                    http_response_code(403);
+                    echo json_encode(["message" => "No autorizado para aprobación final"]);
+                    return;
+                }
+            } elseif ($action === 'reject') {
+                // Allow reject if user has either RRHH or Gerente rights
+                if (!hasApprovalRight($conn, $uid, 'RRHH') && !hasApprovalRight($conn, $uid, 'Gerente')) {
+                    http_response_code(403);
+                    echo json_encode(["message" => "No autorizado para rechazar"]);
+                    return;
+                }
+            }
+
             if ($action === 'approve_rrhh') {
                 $sql = "UPDATE solicitudes_permisos 
                         SET estado = 'Aprobado RRHH', 
@@ -183,14 +218,10 @@ function handleUpdate($conn) {
             }
 
             $stmt = $conn->prepare($sql);
-            $stmt->execute([':id' => $id, ':uid' => $uid]); // Note: reject doesn't use uid in query but we can pass it safely or fix params
-            
-            // Fix params for reject
             if ($action === 'reject') {
-                 $stmt = $conn->prepare("UPDATE solicitudes_permisos SET estado = 'Rechazado' WHERE id = :id");
-                 $stmt->execute([':id' => $id]);
+                $stmt->execute([':id' => $id]);
             } else {
-                 $stmt->execute([':id' => $id, ':uid' => $uid]);
+                $stmt->execute([':id' => $id, ':uid' => $uid]);
             }
 
             echo json_encode(["message" => $msg]);
@@ -349,5 +380,97 @@ function calculateBalance($conn, $colaborador_id) {
         'usados' => (int)$usados,
         'disponibles' => $ganados - $usados
     ];
+}
+
+// =========================
+// Approvers Configuration
+// =========================
+function ensureApproverTable($conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS vacaciones_aprobadores (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nivel ENUM('RRHH','Gerente') NOT NULL,
+        rol_id INT NULL,
+        usuario_id INT NULL,
+        activo TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_nivel (nivel),
+        INDEX idx_rol (rol_id),
+        INDEX idx_usuario (usuario_id)
+    )");
+}
+
+function handleApproversList($conn) {
+    $sql = "SELECT va.*, r.nombre AS rol_nombre, u.usuario AS usuario_nombre
+            FROM vacaciones_aprobadores va
+            LEFT JOIN roles r ON va.rol_id = r.id
+            LEFT JOIN usuarios u ON va.usuario_id = u.id
+            WHERE va.activo = 1
+            ORDER BY va.nivel ASC, va.id DESC";
+    $stmt = $conn->query($sql);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(["data" => $items]);
+}
+
+function handleApproverCreate($conn) {
+    $data = json_decode(file_get_contents("php://input"), true);
+    if (!$data) {
+        http_response_code(400);
+        echo json_encode(["message" => "Formato inválido"]);
+        return;
+    }
+    $nivel = $data['nivel'] ?? '';
+    $tipo = strtolower($data['tipo'] ?? '');
+    $rol_id = null;
+    $usuario_id = null;
+    if ($tipo === 'rol') {
+        $rol_id = $data['rol_id'] ?? null;
+    } elseif ($tipo === 'usuario') {
+        $usuario_id = $data['usuario_id'] ?? null;
+    } else {
+        http_response_code(400);
+        echo json_encode(["message" => "Tipo inválido"]);
+        return;
+    }
+    if (!in_array($nivel, ['RRHH','Gerente'])) {
+        http_response_code(400);
+        echo json_encode(["message" => "Nivel inválido"]);
+        return;
+    }
+    // Prevent duplicates
+    $check = $conn->prepare("SELECT id FROM vacaciones_aprobadores WHERE nivel = :n AND IFNULL(rol_id,0) = IFNULL(:r,0) AND IFNULL(usuario_id,0) = IFNULL(:u,0)");
+    $check->execute([':n' => $nivel, ':r' => $rol_id, ':u' => $usuario_id]);
+    if ($check->fetch()) {
+        http_response_code(400);
+        echo json_encode(["message" => "Ya existe"]);
+        return;
+    }
+    $stmt = $conn->prepare("INSERT INTO vacaciones_aprobadores (nivel, rol_id, usuario_id, activo) VALUES (:n, :r, :u, 1)");
+    $stmt->execute([':n' => $nivel, ':r' => $rol_id, ':u' => $usuario_id]);
+    echo json_encode(["message" => "Aprobador agregado"]);
+}
+
+function handleApproverDelete($conn) {
+    $id = $_GET['id'] ?? null;
+    if (!$id) {
+        http_response_code(400);
+        echo json_encode(["message" => "ID requerido"]);
+        return;
+    }
+    $stmt = $conn->prepare("DELETE FROM vacaciones_aprobadores WHERE id = ?");
+    $stmt->execute([$id]);
+    echo json_encode(["message" => "Aprobador eliminado"]);
+}
+
+function hasApprovalRight($conn, $usuario_id, $nivel) {
+    $q = $conn->prepare("SELECT r.nombre AS rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = ?");
+    $q->execute([$usuario_id]);
+    $u = $q->fetch(PDO::FETCH_ASSOC);
+    $rolNombre = strtolower($u['rol_nombre'] ?? '');
+    if ($nivel === 'RRHH') {
+        return $rolNombre === 'rrhh';
+    } elseif ($nivel === 'Gerente') {
+        return $rolNombre === 'gerente' || $rolNombre === 'gerencia';
+    }
+    return false;
 }
 ?>

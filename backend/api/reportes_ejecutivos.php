@@ -45,17 +45,17 @@ try {
 
 function getFinancieroConsolidado($conn) {
     // Ingresos (Ventas de comprobantes_electronicos)
-    $sqlVentas = "SELECT COALESCE(SUM(total_importe), 0) as total_ventas 
+    $sqlVentas = "SELECT COALESCE(SUM(CASE WHEN tipo_comprobante = '07' THEN -total_importe ELSE total_importe END), 0) as total_ventas 
                   FROM comprobantes_electronicos 
-                  WHERE estado != 'Anulado'";
+                  WHERE estado NOT IN ('Anulado','Generado')";
     $stmtVentas = $conn->prepare($sqlVentas);
     $stmtVentas->execute();
     $ventas = (float)$stmtVentas->fetchColumn();
 
     // Gastos (Compras de comprobantes_compra)
-    $sqlCompras = "SELECT COALESCE(SUM(importe_total), 0) as total_compras 
+    $sqlCompras = "SELECT COALESCE(SUM(CASE WHEN tipo_comprobante = '07' THEN -importe_total ELSE importe_total END), 0) as total_compras 
                    FROM comprobantes_compra 
-                   WHERE estado != 'Anulado'";
+                   WHERE estado NOT IN ('Anulado','Generado')";
     $stmtCompras = $conn->prepare($sqlCompras);
     $stmtCompras->execute();
     $compras = (float)$stmtCompras->fetchColumn();
@@ -95,15 +95,16 @@ function getOperativoConsolidado($conn) {
     // Total Ventas (Cantidad Transacciones)
     $sqlCountVentas = "SELECT COUNT(*) as num_ventas 
                        FROM comprobantes_electronicos 
-                       WHERE estado != 'Anulado'";
+                       WHERE estado NOT IN ('Anulado','Generado') 
+                       AND tipo_comprobante <> '07'";
     $stmtCountVentas = $conn->prepare($sqlCountVentas);
     $stmtCountVentas->execute();
     $numVentas = (int)$stmtCountVentas->fetchColumn();
 
     // Ticket Promedio
-    $sqlTicket = "SELECT AVG(total_importe) as ticket_promedio 
+    $sqlTicket = "SELECT AVG(CASE WHEN tipo_comprobante <> '07' THEN total_importe END) as ticket_promedio 
                   FROM comprobantes_electronicos 
-                  WHERE estado != 'Anulado'";
+                  WHERE estado NOT IN ('Anulado','Generado')";
     $stmtTicket = $conn->prepare($sqlTicket);
     $stmtTicket->execute();
     $ticketPromedio = (float)$stmtTicket->fetchColumn();
@@ -115,7 +116,7 @@ function getOperativoConsolidado($conn) {
         $sqlTop = "SELECT d.descripcion as nombre, SUM(d.cantidad) as total_vendido 
                    FROM comprobantes_electronicos_detalle d
                    JOIN comprobantes_electronicos c ON d.comprobante_id = c.id
-                   WHERE c.estado != 'Anulado'
+                   WHERE c.estado NOT IN ('Anulado','Generado') AND c.tipo_comprobante <> '07'
                    GROUP BY d.descripcion
                    ORDER BY total_vendido DESC
                    LIMIT 5";
@@ -168,9 +169,9 @@ function getComparativos($conn) {
     $anioAnterior = date('Y', strtotime('-1 month')); 
 
     // Ventas Mes Actual
-    $sqlMesActual = "SELECT COALESCE(SUM(total_importe), 0) as total 
+    $sqlMesActual = "SELECT COALESCE(SUM(CASE WHEN tipo_comprobante = '07' THEN -total_importe ELSE total_importe END), 0) as total 
                      FROM comprobantes_electronicos 
-                     WHERE MONTH(fecha_emision) = :mes AND YEAR(fecha_emision) = :anio AND estado != 'Anulado'";
+                     WHERE MONTH(fecha_emision) = :mes AND YEAR(fecha_emision) = :anio AND estado NOT IN ('Anulado','Generado')";
     $stmt = $conn->prepare($sqlMesActual);
     $stmt->execute([':mes' => $mesActual, ':anio' => $anioActual]);
     $ventasMesActual = (float)$stmt->fetchColumn();
@@ -191,9 +192,9 @@ function getComparativos($conn) {
     $anioPasado = $anioActual - 1;
 
     // Ventas Año Actual
-    $sqlAnio = "SELECT COALESCE(SUM(total_importe), 0) as total 
+    $sqlAnio = "SELECT COALESCE(SUM(CASE WHEN tipo_comprobante = '07' THEN -total_importe ELSE total_importe END), 0) as total 
                 FROM comprobantes_electronicos 
-                WHERE YEAR(fecha_emision) = :anio AND estado != 'Anulado'";
+                WHERE YEAR(fecha_emision) = :anio AND estado NOT IN ('Anulado','Generado')";
     $stmtAnio = $conn->prepare($sqlAnio);
     $stmtAnio->execute([':anio' => $anioActual]);
     $ventasAnioActual = (float)$stmtAnio->fetchColumn();

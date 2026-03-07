@@ -22,6 +22,46 @@ if (!$userData) {
 
 $action = $_GET['action'] ?? '';
 
+function normalizeUploadFiles($fileField) {
+    if (!isset($fileField['name'])) {
+        return [];
+    }
+    if (!is_array($fileField['name'])) {
+        return [$fileField];
+    }
+    $files = [];
+    foreach ($fileField['name'] as $index => $name) {
+        if ($fileField['error'][$index] !== UPLOAD_ERR_OK) {
+            continue;
+        }
+        $files[] = [
+            'name' => $name,
+            'type' => $fileField['type'][$index],
+            'tmp_name' => $fileField['tmp_name'][$index],
+            'error' => $fileField['error'][$index],
+            'size' => $fileField['size'][$index]
+        ];
+    }
+    return $files;
+}
+
+function handleCompraUpload($file, $prefix) {
+    if (!isset($file) || $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+    $targetDir = __DIR__ . '/uploads/compras/';
+    if (!file_exists($targetDir)) {
+        mkdir($targetDir, 0777, true);
+    }
+    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $filename = $prefix . '_' . uniqid() . '.' . $ext;
+    $targetPath = $targetDir . $filename;
+    if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+        return 'uploads/compras/' . $filename;
+    }
+    return null;
+}
+
 switch ($action) {
     case 'listar':
         $mes = $_GET['mes'] ?? date('m');
@@ -115,6 +155,169 @@ switch ($action) {
         ];
         $conn = null;
         echo json_encode($response);
+        break;
+
+    case 'listar_adjuntos':
+        $id = $_GET['id'] ?? null;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID requerido"]);
+            break;
+        }
+        try {
+            $conn->query("CREATE TABLE IF NOT EXISTS compras_adjuntos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                compra_id INT NOT NULL,
+                tipo VARCHAR(20) DEFAULT 'general',
+                path VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            $stmt = $conn->prepare("SELECT id, tipo, path, created_at FROM compras_adjuntos WHERE compra_id = :id ORDER BY created_at DESC");
+            $stmt->execute([':id' => $id]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['data' => is_array($rows) ? $rows : []]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error: " . $e->getMessage()]);
+        }
+        break;
+
+    case 'subir_adjuntos':
+        $compraId = $_POST['compra_id'] ?? null;
+        $tipoAdj = $_POST['tipo'] ?? 'general';
+        if (!$compraId) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID de compra requerido"]);
+            break;
+        }
+        try {
+            $conn->query("CREATE TABLE IF NOT EXISTS compras_adjuntos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                compra_id INT NOT NULL,
+                tipo VARCHAR(20) DEFAULT 'general',
+                path VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            if (isset($_FILES['archivos'])) {
+                $files = normalizeUploadFiles($_FILES['archivos']);
+                foreach ($files as $file) {
+                    $path = handleCompraUpload($file, 'compra_' . $compraId);
+                    if ($path) {
+                        $stmt = $conn->prepare("INSERT INTO compras_adjuntos (compra_id, tipo, path) VALUES (:cid, :tipo, :path)");
+                        $stmt->execute([':cid' => $compraId, ':tipo' => $tipoAdj, ':path' => $path]);
+                    }
+                }
+                echo json_encode(["message" => "Adjuntos subidos correctamente"]);
+            } else {
+                http_response_code(400);
+                echo json_encode(["message" => "No se seleccionaron archivos"]);
+            }
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error: " . $e->getMessage()]);
+        }
+        break;
+
+    case 'listar_cuotas':
+        $id = $_GET['id'] ?? null;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID requerido"]);
+            break;
+        }
+        try {
+            $conn->query("CREATE TABLE IF NOT EXISTS comprobantes_compra_cuotas (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                compra_id INT NOT NULL,
+                cuota_nro INT NOT NULL,
+                fecha_pago DATE NOT NULL,
+                monto DECIMAL(12,2) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            $stmtCheck = $conn->prepare("SELECT condicion_pago, fecha_vencimiento, importe_total FROM comprobantes_compra WHERE id = :id");
+            $stmtCheck->execute([':id' => $id]);
+            $comp = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+            if ($comp && $comp['condicion_pago'] !== 'Contado') {
+                $stmtCount = $conn->prepare("SELECT COUNT(*) as c FROM comprobantes_compra_cuotas WHERE compra_id = :id");
+                $stmtCount->execute([':id' => $id]);
+                $count = (int)($stmtCount->fetch(PDO::FETCH_ASSOC)['c'] ?? 0);
+                if ($count === 0) {
+                    $stmtIns = $conn->prepare("INSERT INTO comprobantes_compra_cuotas (compra_id, cuota_nro, fecha_pago, monto) VALUES (:cid, :nro, :fecha, :monto)");
+                    $stmtIns->execute([
+                        ':cid' => $id,
+                        ':nro' => 1,
+                        ':fecha' => $comp['fecha_vencimiento'] ?: $comp['fecha_emision'],
+                        ':monto' => $comp['importe_total']
+                    ]);
+                }
+            }
+            $stmt = $conn->prepare("SELECT id, compra_id, cuota_nro, fecha_pago, monto FROM comprobantes_compra_cuotas WHERE compra_id = :id ORDER BY cuota_nro ASC");
+            $stmt->execute([':id' => $id]);
+            $cuotas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $conn->query("CREATE TABLE IF NOT EXISTS comprobantes_compra_cuotas_adjuntos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                cuota_id INT NOT NULL,
+                path VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            if (!empty($cuotas)) {
+                $ids = implode(',', array_map(function($c){ return (int)$c['id']; }, $cuotas));
+                $stmtAdj = $conn->prepare("SELECT cuota_id, path FROM comprobantes_compra_cuotas_adjuntos WHERE cuota_id IN ($ids)");
+                $stmtAdj->execute();
+                $rowsAdj = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
+                $map = [];
+                foreach ($rowsAdj as $row) {
+                    $map[$row['cuota_id']][] = $row['path'];
+                }
+                foreach ($cuotas as &$c) {
+                    $c['adjuntos'] = $map[$c['id']] ?? [];
+                }
+            }
+            echo json_encode(['data' => $cuotas ?: []]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error: " . $e->getMessage()]);
+        }
+        break;
+
+    case 'subir_adjuntos_cuota':
+        $cuotaId = $_POST['cuota_id'] ?? null;
+        if (!$cuotaId) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID de cuota requerido"]);
+            break;
+        }
+        try {
+            $conn->query("CREATE TABLE IF NOT EXISTS comprobantes_compra_cuotas_adjuntos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                cuota_id INT NOT NULL,
+                path VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            if (isset($_FILES['archivos_cuota'])) {
+                $files = normalizeUploadFiles($_FILES['archivos_cuota']);
+                $dir = __DIR__ . '/uploads/compras/cuotas/';
+                if (!file_exists($dir)) {
+                    mkdir($dir, 0777, true);
+                }
+                foreach ($files as $file) {
+                    $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                    $filename = 'cuota_' . $cuotaId . '_' . uniqid() . '.' . $ext;
+                    $targetPath = $dir . $filename;
+                    if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+                        $path = 'uploads/compras/cuotas/' . $filename;
+                        $stmt = $conn->prepare("INSERT INTO comprobantes_compra_cuotas_adjuntos (cuota_id, path) VALUES (:cid, :path)");
+                        $stmt->execute([':cid' => $cuotaId, ':path' => $path]);
+                    }
+                }
+                echo json_encode(["message" => "Adjuntos de cuota subidos correctamente"]);
+            } else {
+                http_response_code(400);
+                echo json_encode(["message" => "No se seleccionaron archivos"]);
+            }
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error: " . $e->getMessage()]);
+        }
         break;
 
     case 'crear':

@@ -28,6 +28,14 @@ const RegistroCompras = () => {
 
     const [showModal, setShowModal] = useState(false);
     const [showXmlModal, setShowXmlModal] = useState(false);
+    const [showUploadCompraModal, setShowUploadCompraModal] = useState(false);
+    const [uploadingCompraId, setUploadingCompraId] = useState(null);
+    const [compraAdjuntos, setCompraAdjuntos] = useState([]);
+    const [compraUploadFiles, setCompraUploadFiles] = useState([]);
+    const [showCuotaUploadCompraModal, setShowCuotaUploadCompraModal] = useState(false);
+    const [compraCuotas, setCompraCuotas] = useState([]);
+    const [compraCuotaFiles, setCompraCuotaFiles] = useState({});
+    const [uploadingCuotaIds, setUploadingCuotaIds] = useState([]);
     const [formData, setFormData] = useState({
         fecha_emision: new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Lima' }).format(new Date()),
         fecha_vencimiento: '',
@@ -286,6 +294,91 @@ const RegistroCompras = () => {
         }
     };
 
+    const handleOpenUploadCompra = async (compra) => {
+        try {
+            setUploadingCompraId(compra.id);
+            setShowUploadCompraModal(true);
+            setCompraUploadFiles([]);
+            const res = await axios.get(`${API_URL}registro_compras.php?action=listar_adjuntos&id=${compra.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCompraAdjuntos(res.data?.data || []);
+        } catch (error) {
+            toast.error("Error cargando adjuntos");
+        }
+    };
+
+    const handleUploadCompraFiles = async (e) => {
+        e.preventDefault();
+        try {
+            if (!compraUploadFiles || compraUploadFiles.length === 0) {
+                toast.error("Seleccione uno o más archivos");
+                return;
+            }
+            const form = new FormData();
+            form.append('compra_id', uploadingCompraId);
+            Array.from(compraUploadFiles).forEach(f => form.append('archivos[]', f));
+            const res = await axios.post(`${API_URL}registro_compras.php?action=subir_adjuntos`, form, {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+            });
+            toast.success(res.data?.message || "Adjuntos subidos");
+            const refreshed = await axios.get(`${API_URL}registro_compras.php?action=listar_adjuntos&id=${uploadingCompraId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCompraAdjuntos(refreshed.data?.data || []);
+            setCompraUploadFiles([]);
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Error subiendo adjuntos");
+        }
+    };
+
+    const handleOpenCuotaUploadCompra = async (compra) => {
+        try {
+            setShowCuotaUploadCompraModal(true);
+            setUploadingCompraId(compra.id);
+            setCompraCuotas([]);
+            setCompraCuotaFiles({});
+            setUploadingCuotaIds([]);
+            const res = await axios.get(`${API_URL}registro_compras.php?action=listar_cuotas&id=${compra.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCompraCuotas(res.data?.data || []);
+        } catch (error) {
+            toast.error("Error cargando cuotas");
+        }
+    };
+
+    const handleCompraCuotaFileChange = (cuotaId, filesList) => {
+        setCompraCuotaFiles(prev => ({ ...prev, [cuotaId]: filesList }));
+    };
+
+    const handleUploadCompraCuotaFiles = async (cuotaId) => {
+        try {
+            setUploadingCuotaIds(prev => [...prev, cuotaId]);
+            const filesList = compraCuotaFiles[cuotaId];
+            if (!filesList || filesList.length === 0) {
+                toast.error("Seleccione uno o más archivos");
+                return;
+            }
+            const form = new FormData();
+            form.append('cuota_id', cuotaId);
+            Array.from(filesList).forEach(f => form.append('archivos_cuota[]', f));
+            const res = await axios.post(`${API_URL}registro_compras.php?action=subir_adjuntos_cuota`, form, {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+            });
+            toast.success(res.data?.message || "Adjuntos de cuota subidos");
+            const refreshed = await axios.get(`${API_URL}registro_compras.php?action=listar_cuotas&id=${uploadingCompraId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setCompraCuotas(refreshed.data?.data || []);
+            setCompraCuotaFiles(prev => ({ ...prev, [cuotaId]: [] }));
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Error subiendo adjuntos de cuota");
+        } finally {
+            setUploadingCuotaIds(prev => prev.filter(id => id !== cuotaId));
+        }
+    };
+
     const resetForm = () => {
         setEditMode(false);
         setFormData({
@@ -510,6 +603,24 @@ const RegistroCompras = () => {
                                                     >
                                                         <Edit size={18} />
                                                     </button>
+                                                    {(compra.condicion_pago !== 'Contado' || compra.tiene_detraccion == 1) && (
+                                                        <button 
+                                                            onClick={() => handleOpenUploadCompra(compra)}
+                                                            className="text-green-600 hover:text-green-800 transition-colors p-1"
+                                                            title="Adjuntar Documentos"
+                                                        >
+                                                            <Upload size={18} />
+                                                        </button>
+                                                    )}
+                                                    {compra.condicion_pago !== 'Contado' && (
+                                                        <button 
+                                                            onClick={() => handleOpenCuotaUploadCompra(compra)}
+                                                            className="text-purple-600 hover:text-purple-800 transition-colors p-1"
+                                                            title="Adjuntar por Cuota"
+                                                        >
+                                                            <CreditCard size={18} />
+                                                        </button>
+                                                    )}
                                                     <button 
                                                         onClick={() => { setItemToDelete(compra.id); setShowDeleteModal(true); }}
                                                         className="text-red-500 hover:text-red-700 transition-colors p-1"
@@ -548,6 +659,97 @@ const RegistroCompras = () => {
                     </button>
                 </div>
             </div>
+
+            {showUploadCompraModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl">
+                        <div className="bg-green-600 px-6 py-4 rounded-t-xl flex justify-between items-center">
+                            <h3 className="text-white font-bold text-lg">Adjuntar Documentos</h3>
+                            <button onClick={() => setShowUploadCompraModal(false)} className="text-green-100 hover:text-white">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleUploadCompraFiles} className="p-6">
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Archivos</label>
+                                <input
+                                    type="file"
+                                    multiple
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    onChange={e => setCompraUploadFiles(e.target.files)}
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                                />
+                            </div>
+                            <div className="mb-4">
+                                <div className="text-sm text-gray-600 mb-2">Adjuntos existentes</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {compraAdjuntos.length === 0 ? (
+                                        <span className="text-gray-400 text-sm">Sin adjuntos</span>
+                                    ) : compraAdjuntos.map(a => (
+                                        <a key={a.path} href={`${API_URL}${a.path}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs border hover:bg-gray-200">
+                                            {a.path.split('/').pop()}
+                                        </a>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button type="button" onClick={() => setShowUploadCompraModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cerrar</button>
+                                <button type="submit" className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Subir</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showCuotaUploadCompraModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl my-8">
+                        <div className="bg-purple-600 px-6 py-4 rounded-t-xl flex justify-between items-center">
+                            <h3 className="text-white font-bold text-lg">Adjuntar por Cuota</h3>
+                            <button onClick={() => setShowCuotaUploadCompraModal(false)} className="text-purple-100 hover:text-white">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="text-sm text-gray-600 mb-3">Cuotas: {compraCuotas.length}</div>
+                            <div className="space-y-4">
+                                {compraCuotas.map(c => (
+                                    <div key={c.id} className="border rounded-lg p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div className="font-medium text-gray-800">Cuota {c.cuota_nro} • {new Date(c.fecha_pago).toLocaleDateString()} • {c.monto}</div>
+                                            <button
+                                                onClick={() => handleUploadCompraCuotaFiles(c.id)}
+                                                disabled={uploadingCuotaIds.includes(c.id)}
+                                                className="px-3 py-2 bg-purple-600 text-white rounded-lg disabled:opacity-50"
+                                            >
+                                                Subir
+                                            </button>
+                                        </div>
+                                        <div className="mt-3">
+                                            <input
+                                                type="file"
+                                                multiple
+                                                accept=".pdf,.jpg,.jpeg,.png"
+                                                onChange={e => handleCompraCuotaFileChange(c.id, e.target.files)}
+                                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                                            />
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                            {(c.adjuntos || []).length === 0 ? (
+                                                <span className="text-gray-400 text-xs">Sin adjuntos</span>
+                                            ) : c.adjuntos.map(p => (
+                                                <a key={p} href={`${API_URL}${p}`} target="_blank" rel="noreferrer" className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs border hover:bg-gray-200">
+                                                    {p.split('/').pop()}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal Nueva Compra */}
             {showModal && (

@@ -41,7 +41,8 @@ const GestionColaboradores = () => {
     regimen_laboral: '',
     estado: 'Activo',
     rol_id: '',
-    turno_id: ''
+    turno_id: '',
+    asignacion_familiar: 0
   };
 
   const [formData, setFormData] = useState(initialFormState);
@@ -206,7 +207,8 @@ const GestionColaboradores = () => {
       regimen_laboral: item.regimen_laboral || '',
       estado: item.estado || 'Activo',
       rol_id: item.rol_id || '',
-      turno_id: item.turno_id || ''
+      turno_id: item.turno_id || '',
+      asignacion_familiar: item.asignacion_familiar ? 1 : 0
     };
 
     setFormData({
@@ -495,6 +497,7 @@ const GestionColaboradores = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                <th className="p-4 border-b">N°</th>
                 <th className="p-4 border-b">Colaborador</th>
                 <th className="p-4 border-b">Documento</th>
                 <th className="p-4 border-b">Usuario</th>
@@ -505,12 +508,13 @@ const GestionColaboradores = () => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan="6" className="p-8 text-center text-gray-500">Cargando...</td></tr>
+                <tr><td colSpan="7" className="p-8 text-center text-gray-500">Cargando...</td></tr>
               ) : colaboradores.length === 0 ? (
-                <tr><td colSpan="6" className="p-8 text-center text-gray-500">No se encontraron colaboradores.</td></tr>
+                <tr><td colSpan="7" className="p-8 text-center text-gray-500">No se encontraron colaboradores.</td></tr>
               ) : (
-                colaboradores.map(item => (
+                colaboradores.map((item, idx) => (
                   <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-4 w-16">{((page - 1) * limit) + idx + 1}</td>
                     <td className="p-4">
                         <div className="font-semibold text-gray-800">{item.apellidos}, {item.nombres}</div>
                         <div className="text-sm text-gray-500 flex items-center gap-1">
@@ -795,6 +799,18 @@ const GestionColaboradores = () => {
                                     <option value="Recibo por Honorarios">Recibo por Honorarios</option>
                                 </select>
                             </div>
+                        </div>
+                        <div className="mt-2">
+                          <label className="inline-flex items-center">
+                            <input 
+                              type="checkbox" 
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked={!!formData.asignacion_familiar}
+                              disabled
+                            />
+                            <span className="ml-2 text-sm text-gray-700">Asignación Familiar (gestión desde Contratos)</span>
+                          </label>
+                          <p className="text-xs text-gray-500 mt-1">Este campo es informativo. Edite la asignación familiar en Gestión de Contratos.</p>
                         </div>
 
                         <div>

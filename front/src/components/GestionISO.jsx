@@ -6,7 +6,7 @@ import {
     LayoutDashboard, Building, ClipboardList, FileText, 
     Plus, Edit, Trash2, Search, CheckCircle, AlertTriangle, 
     Clock, X, ChevronDown, ChevronUp, Upload, Download,
-    File, Eye, Bell, User, Calendar
+    File, Eye, Bell, User, Calendar, Timer, Filter
 } from 'lucide-react';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell 
@@ -19,6 +19,114 @@ const formatDate = (dateString) => {
     return isNaN(date.getTime()) ? dateString : date.toLocaleString();
 };
 
+const CertificadosDashboard = () => {
+    const [loading, setLoading] = useState(false);
+    const [items, setItems] = useState([]);
+    const days = 90;
+    
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const res = await axios.get(`${API_URL}iso.php?action=dashboard_certificados&days=${days}`);
+            setItems(res.data);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    useEffect(() => {
+        fetchData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    
+    const stats = {
+        total: items.length,
+        retrasados: items.filter(i => i.estado === 'Retrasado').length,
+        empresas: Array.from(new Set(items.map(i => i.empresa))).length
+    };
+    const grouped = items.reduce((acc, i) => {
+        (acc[i.empresa] = acc[i.empresa] || []).push(i);
+        return acc;
+    }, {});
+    
+    return (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <Timer className="text-red-600" /> Certificados por Vencer (Multi-Empresa)
+                </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div className="bg-red-50 border border-red-100 rounded-lg p-3">
+                    <p className="text-xs text-red-700 font-medium">Retrasados</p>
+                    <p className="text-2xl font-bold text-red-700">{stats.retrasados}</p>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-100 rounded-lg p-3">
+                    <p className="text-xs text-yellow-700 font-medium">Próximos a vencer</p>
+                    <p className="text-2xl font-bold text-yellow-700">{stats.total}</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                    <p className="text-xs text-blue-700 font-medium">Empresas afectadas</p>
+                    <p className="text-2xl font-bold text-blue-700">{stats.empresas}</p>
+                </div>
+            </div>
+            {loading ? (
+                <div className="py-8 text-center text-gray-400">Cargando...</div>
+            ) : items.length === 0 ? (
+                <div className="py-8 text-center text-gray-400">No hay certificados próximos a vencer</div>
+            ) : (
+                <div className="space-y-6">
+                    {Object.keys(grouped).sort().map((empresa) => (
+                        <div key={empresa} className="bg-white border border-gray-100 rounded-lg">
+                            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                                <h4 className="font-bold text-gray-800">{empresa}</h4>
+                                <span className="text-xs px-2 py-1 rounded-full bg-gray-50 text-gray-600 border border-gray-200">
+                                    {grouped[empresa].length} certificados
+                                </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 text-gray-700">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left">Norma</th>
+                                            <th className="px-3 py-2 text-left">Requisito</th>
+                                            <th className="px-3 py-2 text-left">Estado</th>
+                                            <th className="px-3 py-2 text-left">Fecha Límite</th>
+                                            <th className="px-3 py-2 text-right">Días</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {grouped[empresa]
+                                            .sort((a, b) => new Date(a.fecha_limite) - new Date(b.fecha_limite))
+                                            .map((i, idx) => (
+                                            <tr key={idx} className="border-b hover:bg-gray-50">
+                                                <td className="px-3 py-2">{i.norma}</td>
+                                                <td className="px-3 py-2 max-w-md truncate" title={i.requisito}>{i.requisito}</td>
+                                                <td className="px-3 py-2">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                                        i.estado === 'Retrasado' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                                                    }`}>
+                                                        {i.estado}
+                                                    </span>
+                                                </td>
+                                                <td className="px-3 py-2 text-gray-600">
+                                                    {new Date(i.fecha_limite + 'T12:00:00').toLocaleDateString()}
+                                                </td>
+                                                <td className="px-3 py-2 text-right font-bold">{i.dias_restantes}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 // --- COMPONENTS ---
 
 const EmpresasView = ({ onSelectEmpresa }) => {
@@ -709,7 +817,7 @@ const SubitemsModal = ({ isOpen, onClose, item, empresaId, normaId, onUpload, re
                                                                 'bg-gray-100 text-gray-600'
                                                             }`}
                                                             value={sub.estado_anual || 'Pendiente'}
-                                                            onChange={e => handleGridUpdate(sub.id, 'estado', e.target.value)}
+                                                            onChange={e => handleGridUpdate(sub.id, 'estado_anual', e.target.value)}
                                                         >
                                                             <option value="Pendiente">Pendiente</option>
                                                             <option value="En Proceso">En Proceso</option>
@@ -794,6 +902,8 @@ const TrackingView = ({ empresas }) => {
     // UI/UX States
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [savingSubitems, setSavingSubitems] = useState({});
+    const trackingYear = new Date().getFullYear();
 
     const handleViewHistory = async (item) => {
         if (!item.tracking_id) {
@@ -912,6 +1022,45 @@ const TrackingView = ({ empresas }) => {
         } catch (error) {
             console.error(error);
             toast.error(error.response?.data?.error || 'Error al actualizar');
+        }
+    };
+    
+    const updateSubitemLocal = (itemId, subitemId, patch) => {
+        setItems(prev => prev.map(it => {
+            if (it.id !== itemId) return it;
+            return {
+                ...it,
+                subitems: (it.subitems || []).map(s => s.id === subitemId ? { ...s, ...patch } : s)
+            };
+        }));
+    };
+    
+    const saveSubitemEvaluation = async (sub) => {
+        if (!sub?.id) return;
+        const subitemId = sub.id;
+        
+        setSavingSubitems(prev => ({ ...prev, [subitemId]: true }));
+        try {
+            const payload = {
+                subitem_id: subitemId,
+                empresa_id: selectedEmpresa,
+                anio: trackingYear,
+                hallazgos: sub.hallazgos || '',
+                estado: sub.estado_anual || 'Pendiente'
+            };
+            
+            ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'].forEach(m => {
+                payload[`${m}_p`] = parseInt(sub[`${m}_p`]) ? 1 : 0;
+                payload[`${m}_e`] = parseInt(sub[`${m}_e`]) ? 1 : 0;
+            });
+            
+            await axios.post(`${API_URL}iso.php?action=save_subitem_evaluation`, payload);
+        } catch (error) {
+            console.error(error);
+            toast.error('Error al guardar subpunto');
+            fetchItems();
+        } finally {
+            setSavingSubitems(prev => ({ ...prev, [subitemId]: false }));
         }
     };
 
@@ -1088,6 +1237,8 @@ const TrackingView = ({ empresas }) => {
 
     return (
         <div className="p-6">
+            {/* Dashboard Certificados por Vencer */}
+            <CertificadosDashboard />
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-wrap gap-4 items-end">
                 <div className="w-full md:w-64">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
@@ -1429,6 +1580,7 @@ const TrackingView = ({ empresas }) => {
                                                                                 <th key={m} className="p-1 text-center w-8 text-[10px] uppercase tracking-wider">{m}</th>
                                                                             ))}
                                                                             <th className="p-3 text-right">Estado</th>
+                                                                            <th className="p-3 w-1/4">Observaciones</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -1474,14 +1626,36 @@ const TrackingView = ({ empresas }) => {
                                                                                     );
                                                                                 })}
                                                                                 <td className="p-3 text-right">
-                                                                                    <span className={`px-2 py-1 rounded-md text-[10px] font-bold border ${
-                                                                                        sub.estado_anual === 'Ejecutado' ? 'bg-green-50 text-green-700 border-green-100' :
-                                                                                        sub.estado_anual === 'En Proceso' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                                                                                        sub.estado_anual === 'Retrasado' ? 'bg-red-50 text-red-700 border-red-100' :
-                                                                                        'bg-gray-50 text-gray-500 border-gray-200'
-                                                                                    }`}>
-                                                                                        {sub.estado_anual || 'Pendiente'}
-                                                                                    </span>
+                                                                                    <select
+                                                                                        className={`w-full p-1.5 text-[10px] font-bold rounded border outline-none cursor-pointer ${
+                                                                                            sub.estado_anual === 'Ejecutado' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                                                            sub.estado_anual === 'En Proceso' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                                                            sub.estado_anual === 'Retrasado' ? 'bg-red-50 text-red-700 border-red-100' :
+                                                                                            'bg-gray-50 text-gray-600 border-gray-200'
+                                                                                        }`}
+                                                                                        value={sub.estado_anual || 'Pendiente'}
+                                                                                        disabled={!!savingSubitems[sub.id]}
+                                                                                        onChange={async (e) => {
+                                                                                            const next = { ...sub, estado_anual: e.target.value };
+                                                                                            updateSubitemLocal(item.id, sub.id, { estado_anual: e.target.value });
+                                                                                            await saveSubitemEvaluation(next);
+                                                                                        }}
+                                                                                    >
+                                                                                        <option value="Pendiente">Pendiente</option>
+                                                                                        <option value="En Proceso">En Proceso</option>
+                                                                                        <option value="Ejecutado">Ejecutado</option>
+                                                                                        <option value="Retrasado">Retrasado</option>
+                                                                                    </select>
+                                                                                </td>
+                                                                                <td className="p-2 align-top">
+                                                                                    <textarea
+                                                                                        className="w-full min-h-[44px] p-2 text-[11px] border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                                                                                        placeholder="Observaciones del subpunto..."
+                                                                                        value={sub.hallazgos || ''}
+                                                                                        disabled={!!savingSubitems[sub.id]}
+                                                                                        onChange={(e) => updateSubitemLocal(item.id, sub.id, { hallazgos: e.target.value })}
+                                                                                        onBlur={(e) => saveSubitemEvaluation({ ...sub, hallazgos: e.target.value })}
+                                                                                    />
                                                                                 </td>
                                                                             </tr>
                                                                         ))}
@@ -1976,6 +2150,279 @@ const TrackingView = ({ empresas }) => {
     );
 };
 
+const ReportBuilderView = () => {
+    const [empresas, setEmpresas] = useState([]);
+    const [normas, setNormas] = useState([]);
+    const [usuarios, setUsuarios] = useState([]);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [selEmpresas, setSelEmpresas] = useState([]);
+    const [selNormas, setSelNormas] = useState([]);
+    const [selUsuarios, setSelUsuarios] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [preview, setPreview] = useState({ total: 0, resumen: [] });
+    const [searchEmp, setSearchEmp] = useState('');
+    const [searchNorm, setSearchNorm] = useState('');
+    const [searchUser, setSearchUser] = useState('');
+    const [presets, setPresets] = useState([]);
+    const [selectedPreset, setSelectedPreset] = useState('');
+    
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const [eRes, nRes, uRes] = await Promise.all([
+                    axios.get(`${API_URL}iso.php?action=list_empresas`),
+                    axios.get(`${API_URL}iso.php?action=list_normas`),
+                    axios.get(`${API_URL}iso.php?action=list_iso_users`)
+                ]);
+                setEmpresas(eRes.data || []);
+                setNormas(nRes.data || []);
+                const ulist = Array.isArray(uRes.data) ? uRes.data : (uRes.data?.users || []);
+                setUsuarios(ulist.map(u => ({ id: u.id, nombre: u.nombre_real || u.usuario })));
+            } catch (e) {}
+            try {
+                const saved = JSON.parse(localStorage.getItem('iso_report_presets') || '[]');
+                setPresets(saved);
+            } catch {}
+        };
+        load();
+    }, []);
+    
+    const toggleSel = (arr, setArr, id) => {
+        if (arr.includes(id)) setArr(arr.filter(x => x !== id));
+        else setArr([...arr, id]);
+    };
+    
+    const availableNormas = React.useMemo(() => {
+        if (selEmpresas.length === 0) return normas;
+        const ids = new Set();
+        empresas.forEach(e => {
+            if (selEmpresas.includes(String(e.id))) {
+                (e.normas || []).forEach(n => ids.add(String(n.id)));
+            }
+        });
+        return normas.filter(n => ids.has(String(n.id)));
+    }, [selEmpresas, empresas, normas]);
+    
+    useEffect(() => {
+        if (selNormas.length > 0) {
+            const validIds = new Set(availableNormas.map(n => String(n.id)));
+            setSelNormas(prev => prev.filter(id => validIds.has(id)));
+        }
+    }, [availableNormas]);
+    
+    const fetchPreview = async () => {
+        setLoading(true);
+        try {
+            const params = new URLSearchParams();
+            if (dateFrom) params.append('date_from', dateFrom);
+            if (dateTo) params.append('date_to', dateTo);
+            if (selEmpresas.length > 0) params.append('empresa_ids', selEmpresas.join(','));
+            if (selNormas.length > 0) params.append('norma_ids', selNormas.join(','));
+            if (selUsuarios.length > 0) params.append('usuario_ids', selUsuarios.join(','));
+            const res = await axios.get(`${API_URL}iso.php?action=report_builder&${params.toString()}`);
+            const rows = Array.isArray(res.data?.rows) ? res.data.rows : (Array.isArray(res.data) ? res.data : []);
+            const total = rows.length;
+            const byEmpresa = {};
+            rows.forEach(r => {
+                const k = r.empresa || 'Sin empresa';
+                byEmpresa[k] = (byEmpresa[k] || 0) + 1;
+            });
+            const resumen = Object.entries(byEmpresa).map(([k,v]) => ({ empresa: k, total: v }));
+            setPreview({ total, resumen });
+        } catch (e) {
+            toast.error('No se pudo obtener la vista previa');
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    const handleGeneratePDF = () => {
+        if (preview.total === 0) {
+            toast.error('Sin resultados. Ajuste filtros o vista previa antes de generar.');
+            return;
+        }
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `${API_URL}iso_pdf.php?type=report_builder`;
+        form.target = '_blank';
+        const append = (name, value) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            form.appendChild(input);
+        };
+        if (dateFrom) append('date_from', dateFrom);
+        if (dateTo) append('date_to', dateTo);
+        if (selEmpresas.length > 0) append('empresa_ids', selEmpresas.join(','));
+        if (selNormas.length > 0) append('norma_ids', selNormas.join(','));
+        if (selUsuarios.length > 0) append('usuario_ids', selUsuarios.join(','));
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    };
+    
+    const resetFilters = () => {
+        setDateFrom('');
+        setDateTo('');
+        setSelEmpresas([]);
+        setSelNormas([]);
+        setSelUsuarios([]);
+        setPreview({ total: 0, resumen: [] });
+    };
+    
+    const savePreset = () => {
+        const name = window.prompt('Nombre del preset:');
+        if (!name) return;
+        const preset = {
+            name,
+            dateFrom, dateTo,
+            selEmpresas, selNormas, selUsuarios
+        };
+        const updated = [...presets.filter(p => p.name !== name), preset];
+        setPresets(updated);
+        localStorage.setItem('iso_report_presets', JSON.stringify(updated));
+        setSelectedPreset(name);
+        toast.success('Preset guardado');
+    };
+    
+    const loadPreset = (name) => {
+        const p = presets.find(pr => pr.name === name);
+        if (!p) return;
+        setDateFrom(p.dateFrom || '');
+        setDateTo(p.dateTo || '');
+        setSelEmpresas(p.selEmpresas || []);
+        setSelNormas(p.selNormas || []);
+        setSelUsuarios(p.selUsuarios || []);
+        setSelectedPreset(name);
+        toast.success('Preset cargado');
+    };
+    
+    return (
+        <div className="p-6">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                    <Filter size={18} className="text-blue-600" />
+                    <h3 className="text-lg font-bold text-gray-800">Generador de Reportes</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Inicio</label>
+                        <input type="date" className="w-full p-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Fin</label>
+                        <input type="date" className="w-full p-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Empresas</label>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Search size={16} className="text-gray-400" />
+                            <input type="text" placeholder="Buscar empresa..." className="flex-1 p-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={searchEmp} onChange={e => setSearchEmp(e.target.value)} />
+                            <span className="text-xs text-gray-500">Seleccionadas: {selEmpresas.length}</span>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg max-h-48 overflow-auto divide-y">
+                            {empresas.filter(e => e.nombre.toLowerCase().includes(searchEmp.toLowerCase())).map(e => {
+                                const selected = selEmpresas.includes(String(e.id));
+                                return (
+                                    <label key={e.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer">
+                                        <input type="checkbox" checked={selected} onChange={() => toggleSel(selEmpresas, setSelEmpresas, String(e.id))} />
+                                        <span className={`text-sm ${selected ? 'text-blue-700' : 'text-gray-700'}`}>
+                                            <Building size={14} className="inline mr-1" /> {e.nombre}
+                                        </span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Normas</label>
+                        <div className="text-xs text-gray-500 mb-2">Seleccionadas: {selNormas.length}</div>
+                        <div className="flex flex-wrap gap-2">
+                            {[...availableNormas].sort((a, b) => {
+                                const ac = String(a.codigo || '');
+                                const bc = String(b.codigo || '');
+                                const cmp = ac.localeCompare(bc);
+                                return cmp !== 0 ? cmp : String(a.nombre || '').localeCompare(String(b.nombre || ''));
+                            }).map(n => (
+                                <button key={n.id} type="button" onClick={() => toggleSel(selNormas, setSelNormas, String(n.id))} className={`px-3 py-1.5 rounded-lg border text-sm ${selNormas.includes(String(n.id)) ? 'bg-purple-50 border-purple-300 text-purple-700' : 'bg-white border-gray-300 text-gray-700'}`}>
+                                    <ClipboardList size={14} className="inline mr-1" /> {n.codigo} - {n.nombre}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Usuarios</label>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Search size={16} className="text-gray-400" />
+                            <input type="text" placeholder="Buscar usuario..." className="flex-1 p-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={searchUser} onChange={e => setSearchUser(e.target.value)} />
+                            <span className="text-xs text-gray-500">Seleccionados: {selUsuarios.length}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {usuarios.filter(u => (u.nombre || '').toLowerCase().includes(searchUser.toLowerCase())).map(u => (
+                                <button key={u.id} type="button" onClick={() => toggleSel(selUsuarios, setSelUsuarios, String(u.id))} className={`px-3 py-1.5 rounded-lg border text-sm ${selUsuarios.includes(String(u.id)) ? 'bg-green-50 border-green-300 text-green-700' : 'bg-white border-gray-300 text-gray-700'}`}>
+                                    <User size={14} className="inline mr-1" /> {u.nombre}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button onClick={fetchPreview} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700">
+                        <Eye size={18} /> Vista previa
+                    </button>
+                    <button onClick={handleGeneratePDF} disabled={preview.total === 0} className={`px-4 py-2 rounded-lg flex items-center gap-2 ${preview.total > 0 ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-300 text-gray-600 cursor-not-allowed'}`}>
+                        <FileText size={18} /> Generar PDF
+                    </button>
+                    <button onClick={resetFilters} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                        Limpiar filtros
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <select value={selectedPreset} onChange={e => loadPreset(e.target.value)} className="p-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="">Seleccionar preset</option>
+                            {presets.map(p => (<option key={p.name} value={p.name}>{p.name}</option>))}
+                        </select>
+                        <button onClick={savePreset} className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">Guardar preset</button>
+                    </div>
+                    {loading && <span className="text-sm text-gray-500">Procesando...</span>}
+                    <span className="text-sm text-gray-600 ml-auto">Resultados: <strong>{preview.total}</strong></span>
+                </div>
+            </div>
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                <h4 className="text-sm font-bold text-gray-700 mb-2">Resumen</h4>
+                <div className="text-sm text-gray-700">Registros: {preview.total}</div>
+                {preview.resumen.length > 0 ? (
+                    <>
+                        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {preview.resumen.map(r => (
+                                <div key={r.empresa} className="px-3 py-2 border rounded-lg bg-gray-50 text-sm flex justify-between">
+                                    <span>{r.empresa}</span>
+                                    <span className="font-bold">{r.total}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="mt-4 h-56">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={preview.resumen}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="empresa" tick={{ fontSize: 10 }} />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Legend />
+                                    <Bar dataKey="total" fill="#3B82F6" name="Registros" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </>
+                ) : (
+                    <div className="text-sm text-gray-500 mt-2">Use los filtros y la vista previa para ver el resumen.</div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const DashboardView = ({ empresas }) => {
     const [selectedEmpresa, setSelectedEmpresa] = useState('');
     const [stats, setStats] = useState([]);
@@ -2254,6 +2701,12 @@ const GestionISO = () => {
                         <CheckCircle size={20} /> Checklists & Tracking
                     </button>
                     <button 
+                        onClick={() => setActiveTab('reportes')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'reportes' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                        <FileText size={20} /> Reportes
+                    </button>
+                    <button 
                         onClick={() => setActiveTab('empresas')}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'empresas' ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}
                     >
@@ -2284,6 +2737,7 @@ const GestionISO = () => {
                     {activeTab === 'empresas' && <EmpresasView />}
                     {activeTab === 'normas' && <NormasView />}
                     {activeTab === 'tracking' && <TrackingView empresas={empresas} />}
+                    {activeTab === 'reportes' && <ReportBuilderView />}
                 </main>
             </div>
         </div>

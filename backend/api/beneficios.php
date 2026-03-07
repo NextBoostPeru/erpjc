@@ -28,8 +28,8 @@ if (!$user_data) {
     exit;
 }
 
-// RMV for 2025
-define('RMV', 1025.00);
+// RMV vigente 2026 (D.S. N.º 006-2024-TR)
+define('RMV', 1130.00);
 define('ASIG_FAMILIAR', RMV * 0.10);
 
 try {
@@ -39,7 +39,7 @@ try {
                 $colabId = $_GET['colaborador_id'];
                 $type = $_GET['type']; // 'cts' or 'grati'
 
-                $stmt = $conn->prepare("SELECT sueldo_base, asignacion_familiar, fecha_ingreso FROM colaboradores WHERE id = ?");
+                $stmt = $conn->prepare("SELECT sueldo_base, fecha_ingreso FROM colaboradores WHERE id = ?");
                 $stmt->execute([$colabId]);
                 $colab = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -48,7 +48,12 @@ try {
                 }
 
                 $sueldo = (float)$colab['sueldo_base'];
-                $asigFam = $colab['asignacion_familiar'] ? ASIG_FAMILIAR : 0;
+                // AF desde contrato vigente hoy
+                $stmtAf = $conn->prepare("SELECT asignacion_familiar FROM contratos WHERE colaborador_id = ? AND fecha_inicio <= CURDATE() AND (fecha_fin IS NULL OR fecha_fin >= CURDATE()) ORDER BY fecha_inicio DESC LIMIT 1");
+                $stmtAf->execute([$colabId]);
+                $rowAf = $stmtAf->fetch(PDO::FETCH_ASSOC);
+                $afFlag = ($rowAf && isset($rowAf['asignacion_familiar'])) ? (int)$rowAf['asignacion_familiar'] : 0;
+                $asigFam = $afFlag === 1 ? ASIG_FAMILIAR : 0;
                 $remuneracionComputable = $sueldo + $asigFam;
 
                 $result = [];

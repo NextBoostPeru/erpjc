@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL } from '../api/config';
-import { FileText, Plus, Search, Trash2, Printer, CheckCircle, XCircle, ArrowRight, Upload, Paperclip, Download, Edit, Copy, Mail, Save, Book, MessageCircle, Percent, DollarSign, Send } from 'lucide-react';
+import { FileText, Plus, Search, Trash2, Printer, CheckCircle, XCircle, ArrowRight, Upload, Paperclip, Download, Edit, Copy, Mail, Save, Book, MessageCircle, Percent, DollarSign, Send, ShieldCheck } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
 import SearchableSelect from './SearchableSelect';
 import jsPDF from 'jspdf';
@@ -320,10 +320,15 @@ const Cotizaciones = () => {
     useEffect(() => {
         fetchEmpresaData();
         fetchBancos();
+        fetchApproversInit();
     }, []);
 
     const [isSearching, setIsSearching] = useState(false);
     const [clientesLoaded, setClientesLoaded] = useState(false);
+    const [approverModalOpen, setApproverModalOpen] = useState(false);
+    const [approvers, setApprovers] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [newApproverUserId, setNewApproverUserId] = useState('');
 
     const fetchClientes = useCallback(async (search = '') => {
         // Evitar búsqueda si no hay término o es muy corto
@@ -376,6 +381,42 @@ const Cotizaciones = () => {
             console.log("Datos de empresa cargados en Cotizaciones:", res.data);
         } catch (error) {
             console.error("Error cargando datos de empresa", error);
+        }
+    };
+
+    const fetchApproversInit = async () => {
+        try {
+            const res = await axios.get(`${API_URL}cotizaciones.php?action=approvers`, { headers });
+            setApprovers(Array.isArray(res.data.data) ? res.data.data : []);
+            const ures = await axios.get(`${API_URL}usuarios.php`, { headers });
+            setUsers(Array.isArray(ures.data.users) ? ures.data.users : []);
+        } catch (e) {
+            console.error("Error cargando aprobadores de cotizaciones", e);
+        }
+    };
+    const addApprover = async (e) => {
+        e.preventDefault();
+        if (!newApproverUserId) {
+            toast.error("Seleccione un usuario");
+            return;
+        }
+        try {
+            await axios.post(`${API_URL}cotizaciones.php?action=approvers`, { usuario_id: newApproverUserId }, { headers });
+            toast.success("Aprobador agregado");
+            setNewApproverUserId('');
+            fetchApproversInit();
+        } catch (e) {
+            toast.error(e.response?.data?.message || "Error al agregar aprobador");
+        }
+    };
+    const deleteApprover = async (id) => {
+        if (!window.confirm("¿Eliminar este aprobador?")) return;
+        try {
+            await axios.delete(`${API_URL}cotizaciones.php?action=approvers&id=${id}`, { headers });
+            toast.success("Aprobador eliminado");
+            fetchApproversInit();
+        } catch (e) {
+            toast.error("Error al eliminar aprobador");
         }
     };
 
@@ -1405,14 +1446,23 @@ const Cotizaciones = () => {
                 <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
                     <FileText className="text-blue-600" /> Cotizaciones
                 </h1>
-                {activeTab === 'listado' && (
+                <div className="flex items-center gap-2">
+                    {activeTab === 'listado' && (
+                        <button 
+                            onClick={() => setActiveTab('nueva')}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                        >
+                            <Plus size={18} /> Nueva Cotización
+                        </button>
+                    )}
                     <button 
-                        onClick={() => setActiveTab('nueva')}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                        onClick={() => { setApproverModalOpen(true); fetchApproversInit(); }}
+                        className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50"
+                        title="Configurar Aprobadores"
                     >
-                        <Plus size={18} /> Nueva Cotización
+                        <ShieldCheck size={18} /> Aprobadores
                     </button>
-                )}
+                </div>
                 {activeTab === 'nueva' && (
                     <button 
                         onClick={() => setActiveTab('listado')}
@@ -2203,12 +2253,23 @@ const Cotizaciones = () => {
 
                             {(selectedCotizacion.estado === 'Enviada' || selectedCotizacion.estado === 'Borrador') && (
                                 <>
-                                    <button onClick={() => handleStatusUpdate(selectedCotizacion.id, 'Aprobada')} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2">
-                                        <CheckCircle size={18}/> Aprobar
-                                    </button>
-                                    <button onClick={() => handleStatusUpdate(selectedCotizacion.id, 'Rechazada')} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-2">
-                                        <XCircle size={18}/> Rechazar
-                                    </button>
+                                    {(() => {
+                                        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+                                        const rol = (currentUser?.rol_nombre || '').toLowerCase();
+                                        const isGerencia = rol.includes('gerente') || rol.includes('gerencia');
+                                        const canApprove = isGerencia || approvers.some(a => a.usuario_id === currentUser?.id);
+                                        if (!canApprove) return null;
+                                        return (
+                                            <>
+                                                <button onClick={() => handleStatusUpdate(selectedCotizacion.id, 'Aprobada')} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2">
+                                                    <CheckCircle size={18}/> Aprobar
+                                                </button>
+                                                <button onClick={() => handleStatusUpdate(selectedCotizacion.id, 'Rechazada')} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-2">
+                                                    <XCircle size={18}/> Rechazar
+                                                </button>
+                                            </>
+                                        );
+                                    })()}
                                 </>
                             )}
 
@@ -2249,6 +2310,52 @@ const Cotizaciones = () => {
                 </div>
             )}
 
+            {approverModalOpen && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-bold">Aprobadores de Cotizaciones</h2>
+                            <button className="text-gray-500 hover:text-gray-700" onClick={() => setApproverModalOpen(false)}>✕</button>
+                        </div>
+                        <form onSubmit={addApprover} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+                            <div className="sm:col-span-3">
+                                <label className="block text-sm font-medium mb-1">Usuario</label>
+                                <select className="w-full border rounded-lg p-2" value={newApproverUserId} onChange={e => setNewApproverUserId(e.target.value)}>
+                                    <option value="">Seleccione usuario</option>
+                                    {users.map(u => <option key={u.id} value={u.id}>{u.usuario} - {u.nombre_real}</option>)}
+                                </select>
+                            </div>
+                            <div className="sm:col-span-1 flex items-end">
+                                <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Agregar</button>
+                            </div>
+                        </form>
+                        <div className="border rounded-lg">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="bg-gray-50 text-gray-600 text-sm">
+                                        <th className="p-2">Usuario</th>
+                                        <th className="p-2">Nombre</th>
+                                        <th className="p-2 text-right">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {approvers.length === 0 ? (
+                                        <tr><td colSpan="3" className="p-4 text-center text-gray-500">Sin configuraciones</td></tr>
+                                    ) : approvers.map(a => (
+                                        <tr key={a.id} className="border-t">
+                                            <td className="p-2">{a.usuario}</td>
+                                            <td className="p-2">{a.nombre_real}</td>
+                                            <td className="p-2 text-right">
+                                                <button onClick={() => deleteApprover(a.id)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded">Eliminar</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Modal Email */}
             {showEmailModal && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

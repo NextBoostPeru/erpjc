@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 import { API_URL } from '../api/config';
 import toast, { Toaster } from 'react-hot-toast';
 import { 
   HandCoins, Search, Filter, AlertCircle, CheckCircle, 
   Calendar, DollarSign, FileText, ArrowRight, Loader, 
-  ChevronDown, ChevronUp, User, X, History, Clock, Edit, Trash2, Upload
+  ChevronDown, ChevronUp, User, X, History, Clock, Edit, Trash2, Upload, FileSpreadsheet
 } from 'lucide-react';
 
 const formatCurrency = (amount, currency = 'PEN') => {
@@ -41,6 +42,7 @@ const Cobranzas = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [historialModalOpen, setHistorialModalOpen] = useState(false);
   const [historialPagos, setHistorialPagos] = useState([]);
+  const [exporting, setExporting] = useState(false);
 
   const [pagoForm, setPagoForm] = useState({
     monto: '',
@@ -294,6 +296,173 @@ const Cobranzas = () => {
     }
   };
 
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      let data = [];
+      let sheetName = 'Export';
+
+      const fetchAllPages = async (params) => {
+        const limit = 500;
+        let page = 1;
+        let out = [];
+        while (true) {
+          const res = await axios.get(`${API_URL}/cobranzas.php`, {
+            params: { ...params, page, limit },
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.data && res.data.pagination) {
+            const rows = res.data.data || [];
+            out = out.concat(rows);
+            const totalPages = res.data.pagination.total_pages || 1;
+            if (page >= totalPages) break;
+            page += 1;
+          } else {
+            const all = Array.isArray(res.data) ? res.data : [];
+            out = all;
+            break;
+          }
+        }
+        return out;
+      };
+
+      if (view === 'pendientes') {
+        sheetName = 'Pendientes';
+        const rows = await fetchAllPages({
+          action: 'listar_pendientes',
+          cliente: search,
+          estado_filter: filterEstado
+        });
+        data = rows.map(inv => ({
+          Vencimiento: inv.fecha_vencimiento,
+          Comprobante: `${inv.serie}-${inv.correlativo}`,
+          Cliente: inv.cliente_razon_social,
+          Total: inv.total_importe,
+          Saldo: inv.saldo_pendiente,
+          Moneda: inv.moneda,
+          Estado: inv.dias_retraso > 0 ? 'Vencido' : 'Pendiente',
+          DiasAtraso: inv.dias_retraso || 0
+        }));
+      } else if (view === 'transacciones') {
+        sheetName = 'Transacciones';
+        const rows = await fetchAllPages({
+          action: 'listar_pagos',
+          cliente: transSearchCliente,
+          medio_pago: transMedioPago,
+          fecha_desde: transFechaDesde,
+          fecha_hasta: transFechaHasta
+        });
+        data = rows.map(pago => ({
+          Fecha: pago.fecha,
+          Comprobante: `${pago.serie}-${pago.correlativo}`,
+          Cliente: pago.cliente_razon_social,
+          Medio: pago.medio_pago,
+          Referencia: pago.referencia || '',
+          Monto: pago.monto,
+          Moneda: pago.moneda
+        }));
+      } else if (view === 'estado_cuenta') {
+        sheetName = 'EstadoCuenta';
+        const rows = await fetchAllPages({
+          action: 'estado_cuenta',
+          doc: clienteSearch
+        });
+        if (!clienteSearch) {
+          data = rows.map(c => ({
+            Cliente: c.cliente_razon_social,
+            Documento: c.cliente_num_doc,
+            DeudaTotal: c.deuda_total
+          }));
+        } else {
+          data = rows.map(inv => ({
+            Cliente: inv.cliente_razon_social,
+            Comprobante: `${inv.serie}-${inv.correlativo}`,
+            Emision: inv.fecha_emision,
+            SaldoPendiente: inv.saldo_pendiente,
+            Moneda: inv.moneda
+          }));
+        }
+      } else if (view === 'reportes') {
+        sheetName = 'Morosidad';
+        const rows = await fetchAllPages({
+          action: 'reporte_morosidad'
+        });
+        data = rows.map(row => ({
+          Cliente: row.cliente_razon_social,
+          FacturasVencidas: row.cantidad_facturas,
+          MaxDiasAtraso: row.max_dias_atraso,
+          TotalDeudaVencida: row.total_deuda
+        }));
+      }
+
+      if (data.length === 0) {
+        if (view === 'pendientes' && pendientes.length > 0) {
+          sheetName = 'Pendientes';
+          data = pendientes.map(inv => ({
+            Vencimiento: inv.fecha_vencimiento,
+            Comprobante: `${inv.serie}-${inv.correlativo}`,
+            Cliente: inv.cliente_razon_social,
+            Total: inv.total_importe,
+            Saldo: inv.saldo_pendiente,
+            Moneda: inv.moneda,
+            Estado: inv.dias_retraso > 0 ? 'Vencido' : 'Pendiente',
+            DiasAtraso: inv.dias_retraso || 0
+          }));
+        } else if (view === 'transacciones' && transacciones.length > 0) {
+          sheetName = 'Transacciones';
+          data = transacciones.map(pago => ({
+            Fecha: pago.fecha,
+            Comprobante: `${pago.serie}-${pago.correlativo}`,
+            Cliente: pago.cliente_razon_social,
+            Medio: pago.medio_pago,
+            Referencia: pago.referencia || '',
+            Monto: pago.monto,
+            Moneda: pago.moneda
+          }));
+        } else if (view === 'estado_cuenta' && estadoCuentaData.length > 0) {
+          sheetName = 'EstadoCuenta';
+          if (!clienteSearch) {
+            data = estadoCuentaData.map(c => ({
+              Cliente: c.cliente_razon_social,
+              Documento: c.cliente_num_doc,
+              DeudaTotal: c.deuda_total
+            }));
+          } else {
+            data = estadoCuentaData.map(inv => ({
+              Cliente: inv.cliente_razon_social,
+              Comprobante: `${inv.serie}-${inv.correlativo}`,
+              Emision: inv.fecha_emision,
+              SaldoPendiente: inv.saldo_pendiente,
+              Moneda: inv.moneda
+            }));
+          }
+        } else if (view === 'reportes' && reporteMorosidad.length > 0) {
+          sheetName = 'Morosidad';
+          data = reporteMorosidad.map(row => ({
+            Cliente: row.cliente_razon_social,
+            FacturasVencidas: row.cantidad_facturas,
+            MaxDiasAtraso: row.max_dias_atraso,
+            TotalDeudaVencida: row.total_deuda
+          }));
+        }
+      }
+
+      if (data.length === 0) {
+        toast.error('No hay registros para exportar con los filtros actuales');
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, `CuentasPorCobrar_${sheetName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (error) {
+      toast.error('No se pudo exportar');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleOpenModal = (invoice) => {
     setSelectedInvoice(invoice);
     setIsEditMode(false);
@@ -438,6 +607,14 @@ const Cobranzas = () => {
             onClick={() => setView('reportes')}
           >
             Reportes
+          </button>
+          <button
+            type="button"
+            className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium rounded-md transition-all ${exporting ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'} text-white shadow-sm flex items-center gap-2 disabled:opacity-60`}
+            onClick={handleExportExcel}
+            disabled={exporting}
+          >
+            {exporting ? <Loader className="animate-spin" size={16}/> : <FileSpreadsheet size={16}/>} {exporting ? 'Exportando...' : 'Exportar'}
           </button>
         </div>
       </div>

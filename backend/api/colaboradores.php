@@ -214,10 +214,10 @@ try {
 
             $sql = "INSERT INTO colaboradores (
                 nombres, apellidos, fecha_nacimiento, documento_tipo, documento_numero, direccion, telefono, email, estado_civil,
-                cargo, area, turno_id, fecha_ingreso, tipo_contrato, regimen_laboral, estado
+                cargo, area, turno_id, fecha_ingreso, tipo_contrato, regimen_laboral, estado, asignacion_familiar
             ) VALUES (
                 :nombres, :apellidos, :fecha_nacimiento, :documento_tipo, :documento_numero, :direccion, :telefono, :email, :estado_civil,
-                :cargo, :area, :turno_id, :fecha_ingreso, :tipo_contrato, :regimen_laboral, :estado
+                :cargo, :area, :turno_id, :fecha_ingreso, :tipo_contrato, :regimen_laboral, :estado, :asignacion_familiar
             )";
             
             $stmt = $conn->prepare($sql);
@@ -237,7 +237,8 @@ try {
                 ':fecha_ingreso' => !empty($data->fecha_ingreso) ? $data->fecha_ingreso : null,
                 ':tipo_contrato' => $data->tipo_contrato ?? '',
                 ':regimen_laboral' => $data->regimen_laboral ?? '',
-                ':estado' => $data->estado ?? 'Activo'
+                ':estado' => $data->estado ?? 'Activo',
+                ':asignacion_familiar' => !empty($data->asignacion_familiar) ? 1 : 0
             ]);
 
             $colab_id = $conn->lastInsertId();
@@ -309,7 +310,8 @@ try {
                 fecha_ingreso = :fecha_ingreso,
                 tipo_contrato = :tipo_contrato,
                 regimen_laboral = :regimen_laboral,
-                estado = :estado
+                estado = :estado,
+                asignacion_familiar = :asignacion_familiar
                 WHERE id = :id";
             
             $stmt = $conn->prepare($sql);
@@ -330,6 +332,7 @@ try {
                 ':tipo_contrato' => $data->tipo_contrato,
                 ':regimen_laboral' => $data->regimen_laboral,
                 ':estado' => $data->estado,
+                ':asignacion_familiar' => !empty($data->asignacion_familiar) ? 1 : 0,
                 ':id' => $data->id
             ]);
 

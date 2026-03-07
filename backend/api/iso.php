@@ -30,7 +30,13 @@ try {
     // ==========================================
 
     if ($action === 'list_empresas') {
-        $stmt = $conn->query("SELECT * FROM iso_empresas ORDER BY nombre");
+        $stmt = $conn->query("
+            SELECT e.* 
+            FROM iso_empresas e
+            INNER JOIN iso_empresas_normas en ON en.empresa_id = e.id
+            GROUP BY e.id
+            ORDER BY e.nombre
+        ");
         $empresas = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         foreach ($empresas as &$emp) {
@@ -144,6 +150,7 @@ try {
     elseif ($action === 'get_tracking') {
         $empresa_id = $_GET['empresa_id'] ?? 0;
         $norma_id = $_GET['norma_id'] ?? 0;
+        $anio = $_GET['anio'] ?? date('Y');
         
         if (!$empresa_id || !$norma_id) throw new Exception("Empresa y Norma son requeridos");
 
@@ -185,13 +192,26 @@ try {
 
             // Subitems with status
             $stmtSub = $conn->prepare("
-                SELECT s.*, e.estado as estado_anual 
+                SELECT s.*, 
+                       e.hallazgos, e.estado as estado_anual,
+                       e.ene_p, e.ene_e,
+                       e.feb_p, e.feb_e,
+                       e.mar_p, e.mar_e,
+                       e.abr_p, e.abr_e,
+                       e.may_p, e.may_e,
+                       e.jun_p, e.jun_e,
+                       e.jul_p, e.jul_e,
+                       e.ago_p, e.ago_e,
+                       e.sep_p, e.sep_e,
+                       e.oct_p, e.oct_e,
+                       e.nov_p, e.nov_e,
+                       e.dic_p, e.dic_e
                 FROM iso_checklist_subitems s
                 LEFT JOIN iso_subitem_evaluaciones e ON s.id = e.subitem_id AND e.empresa_id = ? AND e.anio = ?
                 WHERE s.item_id = ? 
                 ORDER BY s.id
             ");
-            $stmtSub->execute([$empresa_id, date('Y'), $item['id']]);
+            $stmtSub->execute([$empresa_id, $anio, $item['id']]);
             $item['subitems'] = $stmtSub->fetchAll(PDO::FETCH_ASSOC);
         }
 
@@ -476,6 +496,127 @@ try {
         ");
         $stmt->execute([$tracking_id]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    elseif ($action === 'report_builder') {
+        $date_from = $_GET['date_from'] ?? null;
+        $date_to = $_GET['date_to'] ?? null;
+        $empresa_ids = !empty($_GET['empresa_ids']) ? array_filter(array_map('intval', explode(',', $_GET['empresa_ids']))) : [];
+        $norma_ids = !empty($_GET['norma_ids']) ? array_filter(array_map('intval', explode(',', $_GET['norma_ids']))) : [];
+        $usuario_ids = !empty($_GET['usuario_ids']) ? array_filter(array_map('intval', explode(',', $_GET['usuario_ids']))) : [];
+        
+        $sql = "
+            SELECT 
+                t.id as tracking_id,
+                e.nombre as empresa,
+                n.codigo as norma_codigo,
+                n.nombre as norma_nombre,
+                i.categoria, i.numeral, i.requisito, i.descripcion_requisito,
+                t.estado, t.fecha_programada, t.fecha_limite, t.fecha_ejecucion,
+                (SELECT COUNT(*) FROM iso_documentos d WHERE d.tracking_id = t.id) as documentos_count
+            FROM iso_tracking t
+            JOIN iso_empresas e ON t.empresa_id = e.id
+            JOIN iso_normas n ON t.norma_id = n.id
+            JOIN iso_checklist_items i ON t.item_id = i.id
+            WHERE 1=1
+        ";
+        $params = [];
+        
+        if (!empty($empresa_ids)) {
+            $in = implode(',', array_fill(0, count($empresa_ids), '?'));
+            $sql .= " AND t.empresa_id IN ($in)";
+            $params = array_merge($params, $empresa_ids);
+        }
+        if (!empty($norma_ids)) {
+            $in = implode(',', array_fill(0, count($norma_ids), '?'));
+            $sql .= " AND t.norma_id IN ($in)";
+            $params = array_merge($params, $norma_ids);
+        }
+        if ($date_from && $date_to) {
+            $sql .= " AND ( 
+                (t.fecha_programada BETWEEN ? AND ?) OR 
+                (t.fecha_ejecucion BETWEEN ? AND ?) OR 
+                (t.fecha_limite BETWEEN ? AND ?) OR
+                EXISTS(SELECT 1 FROM iso_documentos d WHERE d.tracking_id=t.id AND DATE(d.created_at) BETWEEN ? AND ?) OR
+                EXISTS(SELECT 1 FROM iso_historial h WHERE h.tracking_id=t.id AND DATE(h.created_at) BETWEEN ? AND ?)
+            )";
+            $params = array_merge($params, [$date_from, $date_to, $date_from, $date_to, $date_from, $date_to, $date_from, $date_to, $date_from, $date_to]);
+        }
+        if (!empty($usuario_ids)) {
+            $in = implode(',', array_fill(0, count($usuario_ids), '?'));
+            $sql .= " AND ( 
+                EXISTS(SELECT 1 FROM iso_documentos d WHERE d.tracking_id=t.id AND d.usuario_id IN ($in)) OR
+                EXISTS(SELECT 1 FROM iso_historial h WHERE h.tracking_id=t.id AND h.usuario_id IN ($in))
+            )";
+            $params = array_merge($params, $usuario_ids, $usuario_ids);
+        }
+        
+        $sql .= " ORDER BY e.nombre, n.codigo, i.orden";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        echo json_encode(['rows' => $rows]);
+    }
+
+    elseif ($action === 'list_iso_users') {
+        $sql = "
+            SELECT DISTINCT u.id, u.usuario, u.nombre_real
+            FROM usuarios u
+            WHERE EXISTS (SELECT 1 FROM iso_documentos d WHERE d.usuario_id = u.id)
+               OR EXISTS (SELECT 1 FROM iso_historial h WHERE h.usuario_id = u.id)
+            ORDER BY COALESCE(u.nombre_real, u.usuario)
+        ";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute();
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode($users);
+    }
+
+    // ==========================================
+    // DASHBOARD: CERTIFICADOS POR VENCER (MULTI-EMPRESA)
+    // ==========================================
+    elseif ($action === 'dashboard_certificados') {
+        $days = isset($_GET['days']) ? (int)$_GET['days'] : 90;
+        if ($days <= 0) $days = 90;
+        $today = date('Y-m-d');
+        $limitDate = date('Y-m-d', strtotime("+{$days} days"));
+        
+        $sql = "
+            SELECT 
+                t.id as tracking_id,
+                t.empresa_id,
+                t.norma_id,
+                t.item_id,
+                t.estado,
+                t.fecha_limite,
+                e.nombre as empresa,
+                n.codigo as norma_codigo,
+                n.nombre as norma_nombre,
+                i.categoria,
+                i.numeral,
+                i.requisito
+            FROM iso_tracking t
+            JOIN iso_empresas e ON t.empresa_id = e.id
+            JOIN iso_normas n ON t.norma_id = n.id
+            JOIN iso_checklist_items i ON t.item_id = i.id
+            WHERE 
+                t.fecha_limite IS NOT NULL
+                AND t.fecha_limite BETWEEN ? AND ?
+                AND (LOWER(i.requisito) LIKE '%certific%' OR LOWER(i.categoria) LIKE '%certific%')
+                AND t.estado NOT IN ('Ejecutado', 'No aplica')
+            ORDER BY t.fecha_limite ASC, e.nombre ASC
+        ";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([$today, $limitDate]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Enrich with days remaining
+        foreach ($rows as &$r) {
+            $r['dias_restantes'] = (int) floor((strtotime($r['fecha_limite']) - strtotime($today)) / 86400);
+            $r['norma'] = trim(($r['norma_codigo'] ?? '') . ' ' . ($r['norma_nombre'] ?? ''));
+        }
+        echo json_encode($rows);
     }
 
     // ==========================================

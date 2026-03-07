@@ -16,7 +16,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 // Constants
-define('RMV', 1025.00);
+define('RMV', 1130.00);
 define('ASIG_FAMILIAR', RMV * 0.10);
 
 function getMonthsDays($startDate, $endDate) {

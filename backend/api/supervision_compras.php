@@ -13,14 +13,8 @@ if (!$userData) {
     exit;
 }
 
-// Basic RBAC check: only admin or gerente
-$rol = strtolower($userData['rol']);
-if ($rol !== 'admin' && $rol !== 'gerente') {
-    http_response_code(403);
-    echo json_encode(["message" => "Permiso denegado"]);
-    if (isset($conn)) $conn = null;
-    exit;
-}
+// RBAC básico: permitir lectura a usuarios autenticados; restringir aprobación a admin/gerente
+$rol = is_object($userData) ? strtolower($userData->rol ?? '') : strtolower($userData['rol'] ?? '');
 
 $action = $_GET['action'] ?? '';
 $start = $_GET['start'] ?? date('Y-m-01');
@@ -105,6 +99,11 @@ try {
             break;
 
         case 'manage_approval':
+            if ($rol !== 'admin' && $rol !== 'gerente') {
+                http_response_code(403);
+                echo json_encode(["message" => "Permiso denegado"]);
+                break;
+            }
             $data = json_decode(file_get_contents("php://input"), true);
             if (empty($data['id']) || empty($data['status'])) {
                 throw new Exception("Datos incompletos");
@@ -116,7 +115,7 @@ try {
             $stmt = $conn->prepare($sql);
             $stmt->execute([
                 ':status' => $data['status'],
-                ':user' => $userData->id,
+                ':user' => (is_object($userData) ? $userData->id : $userData['id']),
                 ':id' => $data['id']
             ]);
             

@@ -187,6 +187,14 @@ const Layout = ({ children }) => {
       });
   }
 
+  if (!modulos.some(m => m.codigo === 'alquileres')) {
+      modulos.push({
+          codigo: 'alquileres',
+          nombre: 'Alquileres',
+          ruta: '/alquileres'
+      });
+  }
+
   // Filter out 'comprobantes' as per previous request
   const displayModulos = modulos.filter(modulo => modulo.codigo !== 'comprobantes');
   
@@ -323,6 +331,7 @@ const Layout = ({ children }) => {
       case 'retenciones': return <FileText size={20} />;
       case 'gestion_coordinaciones': return <Briefcase size={20} />;
       case 'Users': return <Users size={20} />;
+      case 'alquileres': return <Package size={20} />;
       default: return <LayoutDashboard size={20} />;
     }
   };

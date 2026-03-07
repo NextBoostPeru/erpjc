@@ -10,6 +10,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+function ensureQuoteApproverTable($conn) {
+    $conn->exec("CREATE TABLE IF NOT EXISTS cotizaciones_aprobadores (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NOT NULL,
+        activo TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_usuario (usuario_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+function hasQuoteApprovalRight($conn, $usuario_id) {
+    // Gerencia always allowed
+    $q = $conn->prepare("SELECT r.nombre AS rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = ?");
+    $q->execute([$usuario_id]);
+    $u = $q->fetch(PDO::FETCH_ASSOC);
+    $rol = strtolower($u['rol_nombre'] ?? '');
+    if (in_array($rol, ['gerente','gerencia'])) return true;
+    // Else check configured approvers
+    ensureQuoteApproverTable($conn);
+    $stmt = $conn->prepare("SELECT COUNT(*) FROM cotizaciones_aprobadores WHERE usuario_id = ? AND activo = 1");
+    $stmt->execute([$usuario_id]);
+    return ((int)$stmt->fetchColumn()) > 0;
+}
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -39,6 +62,61 @@ if (!file_exists($uploadDir)) {
 $action = $_GET['action'] ?? '';
 
 switch ($action) {
+    case 'approvers':
+        ensureQuoteApproverTable($conn);
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            $stmt = $conn->query("SELECT ca.id, ca.usuario_id, u.usuario, u.nombre_real 
+                                  FROM cotizaciones_aprobadores ca 
+                                  LEFT JOIN usuarios u ON ca.usuario_id = u.id 
+                                  WHERE ca.activo = 1 
+                                  ORDER BY ca.id DESC");
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['data' => $rows]);
+            break;
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $rol = strtolower($userData['rol_nombre'] ?? '');
+            if (!in_array($rol, ['gerente', 'gerencia'])) {
+                http_response_code(403);
+                echo json_encode(["message" => "Solo Gerencia puede configurar aprobadores"]);
+                break;
+            }
+            $data = json_decode(file_get_contents("php://input"), true);
+            $uid = $data['usuario_id'] ?? null;
+            if (!$uid) {
+                http_response_code(400);
+                echo json_encode(["message" => "usuario_id requerido"]);
+                break;
+            }
+            $chk = $conn->prepare("SELECT id FROM cotizaciones_aprobadores WHERE usuario_id = ? AND activo = 1");
+            $chk->execute([$uid]);
+            if ($chk->fetch()) {
+                http_response_code(400);
+                echo json_encode(["message" => "Ya está configurado"]);
+                break;
+            }
+            $stmt = $conn->prepare("INSERT INTO cotizaciones_aprobadores (usuario_id, activo) VALUES (?, 1)");
+            $stmt->execute([$uid]);
+            echo json_encode(["message" => "Aprobador agregado"]);
+            break;
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+            $rol = strtolower($userData['rol_nombre'] ?? '');
+            if (!in_array($rol, ['gerente', 'gerencia'])) {
+                http_response_code(403);
+                echo json_encode(["message" => "Solo Gerencia puede eliminar aprobadores"]);
+                break;
+            }
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(["message" => "ID requerido"]);
+                break;
+            }
+            $stmt = $conn->prepare("DELETE FROM cotizaciones_aprobadores WHERE id = ?");
+            $stmt->execute([$id]);
+            echo json_encode(["message" => "Aprobador eliminado"]);
+            break;
+        }
+        break;
     case 'list':
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 200;
         if ($limit < 10) $limit = 10;
@@ -415,6 +493,16 @@ switch ($action) {
             echo json_encode(["message" => "Estado inválido"]);
             if (isset($conn)) $conn = null;
             exit;
+        }
+
+        // Permission: only configured approvers or Gerencia can approve/rechazar
+        if (in_array($estado, ['Aprobada', 'Rechazada'])) {
+            $uid = (int)($userData['id'] ?? 0);
+            if ($uid <= 0 || !hasQuoteApprovalRight($conn, $uid)) {
+                http_response_code(403);
+                echo json_encode(["message" => "No autorizado para cambiar estado a $estado"]);
+                exit;
+            }
         }
 
         if ($estado === 'Rechazada') {

@@ -48,7 +48,8 @@ const ControlAsistencia = () => {
     hora_entrada: '',
     hora_salida: '',
     observaciones: '',
-    estado: 'Asistencia' // Asistencia, Falta, Licencia, Vacaciones
+    estado: 'Asistencia',
+    horas_extras: ''
   };
   const [formData, setFormData] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
@@ -99,6 +100,17 @@ const ControlAsistencia = () => {
       toast.error("Error cargando asistencias");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetDay = async () => {
+    if (!window.confirm('¿Resetear asistencias del día seleccionado?')) return;
+    try {
+      await axios.post(`${API_URL}asistencias.php?reset=true`, { date: filterDate, area: filterArea });
+      toast.success("Asistencias reseteadas");
+      fetchAsistencias();
+    } catch (error) {
+      toast.error("Error al resetear asistencias");
     }
   };
 
@@ -350,15 +362,10 @@ const ControlAsistencia = () => {
   };
 
   const handleEdit = (item) => {
-    // Infer 'estado' for the form based on item.estado or item.hora_entrada
-    // If item.estado is one of the new types, use it.
-    // If item.estado is 'Pendiente'/'Validado'/'Observado', it's likely 'Asistencia' unless hours are null.
-    
     let formEstado = 'Asistencia';
     if (['Falta', 'Licencia', 'Vacaciones'].includes(item.estado)) {
         formEstado = item.estado;
     } else if (!item.hora_entrada) {
-        // Fallback if we have null hours but status is Pendiente (legacy?)
         formEstado = 'Falta';
     }
 
@@ -368,7 +375,8 @@ const ControlAsistencia = () => {
       hora_entrada: item.hora_entrada || '',
       hora_salida: item.hora_salida || '',
       observaciones: item.observaciones || '',
-      estado: formEstado
+      estado: formEstado,
+      horas_extras: item.horas_extras || ''
     });
     setEditingId(item.id);
     setModalOpen(true);
@@ -514,6 +522,13 @@ const ControlAsistencia = () => {
                 title="Exportar vista actual"
               >
                 <Download size={18} /> <span className="inline">Exportar</span>
+              </button>
+              <button 
+                onClick={handleResetDay}
+                className="flex-1 xl:flex-none justify-center bg-white border border-red-600 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium whitespace-nowrap"
+                title="Resetear asistencias del día"
+              >
+                <XCircle size={18} /> <span className="inline">Resetear Día</span>
               </button>
               <button 
                 onClick={() => setImportModalOpen(true)}
@@ -973,6 +988,17 @@ const ControlAsistencia = () => {
                       className="w-full border rounded-lg p-2"
                       value={formData.hora_salida}
                       onChange={e => setFormData({...formData, hora_salida: e.target.value})}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">Horas Extras</label>
+                    <input 
+                      type="number" 
+                      step="0.25"
+                      className="w-full border rounded-lg p-2"
+                      value={formData.horas_extras}
+                      onChange={e => setFormData({...formData, horas_extras: e.target.value})}
+                      placeholder="0"
                     />
                   </div>
                 </div>

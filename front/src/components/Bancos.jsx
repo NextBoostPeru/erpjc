@@ -34,13 +34,24 @@ const Bancos = () => {
 
     // Forms
     const [cuentaForm, setCuentaForm] = useState({ nombre_banco: '', numero_cuenta: '', tipo_cuenta: 'Corriente', moneda: 'PEN', saldo_inicial: 0, cuenta_contable: '', cci: '', titular: '', mostrar_en_pdf: false });
-    const [movForm, setMovForm] = useState({ id: null, tipo: 'Ingreso', monto: '', concepto: '', referencia: '', entidad: '', cuenta_contable: '' });
-    const [transfForm, setTransfForm] = useState({ cuenta_destino_id: '', monto: '', concepto: '', referencia: '' });
+    const [movForm, setMovForm] = useState({ id: null, tipo: 'Ingreso', monto: '', concepto: '', referencia: '', entidad: '', cuenta_contable: '', origen_destino: '', fecha: '' });
+    const [transfForm, setTransfForm] = useState({ cuenta_destino_id: '', monto: '', concepto: '', referencia: '', fecha: '' });
     const [chequeForm, setChequeForm] = useState({ numero_cheque: '', beneficiario: '', monto: '', fecha_emision: '', fecha_pago: '' });
 
     const token = localStorage.getItem('token');
     const modulos = JSON.parse(localStorage.getItem('modulos')) || [];
     const hasCaja = modulos.some(m => m.codigo === 'caja');
+
+    const toDateTimeLocal = (v) => {
+        if (!v) return '';
+        const d = new Date(v);
+        const p = (n) => n.toString().padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const toServerDateTime = (v) => {
+        if (!v) return '';
+        return `${v.replace('T', ' ')}:00`;
+    };
 
     useEffect(() => {
         fetchCuentas();
@@ -162,20 +173,25 @@ const Bancos = () => {
 
         try {
             if (movForm.id) {
-                await axios.post(`${API_URL}/bancos.php?action=editar_movimiento`, {
+                const payload = {
                     id: movForm.id,
                     monto: movForm.monto,
                     concepto: movForm.concepto,
                     referencia: movForm.referencia,
                     entidad: movForm.entidad,
                     origen_destino: movForm.origen_destino
-                }, { headers: { Authorization: `Bearer ${token}` } });
+                };
+                if (movForm.fecha) {
+                    payload.fecha = toServerDateTime(movForm.fecha);
+                }
+                await axios.post(`${API_URL}/bancos.php?action=editar_movimiento`, payload, { headers: { Authorization: `Bearer ${token}` } });
                 toast.success('Movimiento actualizado');
             } else {
-                await axios.post(`${API_URL}/bancos.php?action=registrar_movimiento`, {
-                    ...movForm,
-                    cuenta_id: selectedCuenta.id
-                }, { headers: { Authorization: `Bearer ${token}` } });
+                const payload = { ...movForm, cuenta_id: selectedCuenta.id };
+                if (payload.fecha) {
+                    payload.fecha = toServerDateTime(payload.fecha);
+                }
+                await axios.post(`${API_URL}/bancos.php?action=registrar_movimiento`, payload, { headers: { Authorization: `Bearer ${token}` } });
                 toast.success('Movimiento registrado');
             }
             setActiveModal(null);
@@ -186,7 +202,7 @@ const Bancos = () => {
             const updatedCuenta = cuentas.find(c => c.id === selectedCuenta.id);
             if(updatedCuenta) setSelectedCuenta(updatedCuenta);
 
-            setMovForm({ id: null, tipo: 'Ingreso', monto: '', concepto: '', referencia: '', entidad: '', cuenta_contable: '' });
+            setMovForm({ id: null, tipo: 'Ingreso', monto: '', concepto: '', referencia: '', entidad: '', cuenta_contable: '', origen_destino: '', fecha: '' });
         } catch (error) { toast.error('Error: ' + (error.response?.data?.message || 'Error desconocido')); }
     };
 
@@ -197,17 +213,21 @@ const Bancos = () => {
 
         try {
             const destino = cuentas.find(c => c.id == transfForm.cuenta_destino_id);
-            await axios.post(`${API_URL}/bancos.php?action=transferencia`, {
+            const payload = {
                 ...transfForm,
                 cuenta_origen: selectedCuenta.id,
                 cuenta_origen_nombre: selectedCuenta.nombre_banco,
                 cuenta_destino_nombre: destino ? destino.nombre_banco : 'Externo'
-            }, { headers: { Authorization: `Bearer ${token}` } });
+            };
+            if (payload.fecha) {
+                payload.fecha = toServerDateTime(payload.fecha);
+            }
+            await axios.post(`${API_URL}/bancos.php?action=transferencia`, payload, { headers: { Authorization: `Bearer ${token}` } });
             setActiveModal(null);
             fetchMovimientos(selectedCuenta.id);
             fetchCuentas();
             toast.success('Transferencia realizada');
-            setTransfForm({ cuenta_destino_id: '', monto: '', concepto: '', referencia: '' });
+            setTransfForm({ cuenta_destino_id: '', monto: '', concepto: '', referencia: '', fecha: '' });
         } catch (error) { toast.error('Error al transferir'); }
     };
 
@@ -577,7 +597,8 @@ const Bancos = () => {
                                                                         referencia: m.referencia || '',
                                                                         entidad: m.entidad || '',
                                                                         cuenta_contable: m.cuenta_contable || '',
-                                                                        origen_destino: m.origen_destino || ''
+                                                                        origen_destino: m.origen_destino || '',
+                                                                        fecha: toDateTimeLocal(m.fecha)
                                                                     });
                                                                     setActiveModal('movimiento');
                                                                 }}
@@ -746,6 +767,10 @@ const Bancos = () => {
                                 </select>
                             </div>
                         </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                            <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg outline-none" value={movForm.fecha || ''} onChange={e => setMovForm({...movForm, fecha: e.target.value})}/>
+                        </div>
                         <button type="submit" className={`w-full text-white py-2 rounded-lg font-medium transition-colors ${movForm.id ? 'bg-blue-600 hover:bg-blue-700' : (movForm.tipo === 'Ingreso' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700')}`}>
                             {movForm.id ? 'Guardar Cambios' : `Registrar ${movForm.tipo}`}
                         </button>
@@ -774,6 +799,10 @@ const Bancos = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Monto a Transferir</label>
                             <input type="number" step="0.01" required className="w-full px-3 py-2 border rounded-lg outline-none font-bold" value={transfForm.monto} onChange={e => setTransfForm({...transfForm, monto: e.target.value})}/>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                            <input type="datetime-local" className="w-full px-3 py-2 border rounded-lg outline-none" value={transfForm.fecha || ''} onChange={e => setTransfForm({...transfForm, fecha: e.target.value})}/>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Referencia</label>

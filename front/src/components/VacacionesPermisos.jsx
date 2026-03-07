@@ -20,7 +20,8 @@ const VacacionesPermisos = () => {
     fecha_inicio: '',
     fecha_fin: '',
     motivo: '',
-    documento: null
+    documento: null,
+    documento_url: ''
   });
 
   const [filters, setFilters] = useState({
@@ -109,7 +110,8 @@ const VacacionesPermisos = () => {
         tipo: item.tipo,
         fecha_inicio: item.fecha_inicio,
         fecha_fin: item.fecha_fin,
-        motivo: item.motivo
+        motivo: item.motivo,
+        documento_url: item.documento || ''
     });
     setModalOpen(true);
   };
@@ -176,9 +178,8 @@ const VacacionesPermisos = () => {
     if (!role) return null;
 
     // Allow 'admin' to act as superuser
-    const isAdmin = role === 'admin';
-    const isRRHH = role === 'rrhh' || isAdmin;
-    const isGerente = role === 'gerente' || isAdmin;
+    const isRRHH = role.includes('rrhh');
+    const isGerente = role.includes('gerente') || role.includes('gerencia');
 
     // Reject is available to both if pending their approval
     const canReject = (isRRHH && item.estado === 'Pendiente') || 
@@ -303,18 +304,19 @@ const VacacionesPermisos = () => {
 
       {/* List */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+        {/* Tabla (solo en pantallas sm+) */}
+        <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
                 <tr className="bg-gray-50 text-gray-600 text-sm uppercase">
-                <th className="p-4 border-b">Colaborador</th>
-                <th className="p-4 border-b">Tipo</th>
-                <th className="p-4 border-b">Fechas</th>
-                <th className="p-4 border-b">Días</th>
-                <th className="p-4 border-b">Motivo</th>
-                <th className="p-4 border-b">Doc</th>
-                <th className="p-4 border-b">Estado</th>
-                <th className="p-4 border-b text-right">Acciones</th>
+                <th className="p-4 border-b w-64">Colaborador</th>
+                <th className="p-4 border-b w-32">Tipo</th>
+                <th className="p-4 border-b w-40">Fechas</th>
+                <th className="p-4 border-b w-20">Días</th>
+                <th className="p-4 border-b w-[280px]">Motivo</th>
+                <th className="p-4 border-b w-20 text-center">Doc</th>
+                <th className="p-4 border-b w-44">Estado</th>
+                <th className="p-4 border-b w-40 text-right">Acciones</th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -377,6 +379,65 @@ const VacacionesPermisos = () => {
                 )}
             </tbody>
             </table>
+        </div>
+        {/* Cards (solo móvil) */}
+        <div className="sm:hidden p-2 space-y-3">
+          {loading ? (
+            <div className="p-4 text-center text-gray-500 bg-white rounded-lg border">Cargando...</div>
+          ) : solicitudes.length === 0 ? (
+            <div className="p-4 text-center text-gray-500 bg-white rounded-lg border">No hay solicitudes registradas</div>
+          ) : (
+            solicitudes.map(item => (
+              <div key={item.id} className="bg-white rounded-lg border shadow-sm p-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-800">{item.apellidos}, {item.nombres}</div>
+                    <div className="text-[11px] text-gray-500">{item.documento_numero}</div>
+                  </div>
+                  <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap
+                    ${item.tipo === 'Vacaciones' ? 'bg-blue-50 text-blue-700' : 
+                    item.tipo.includes('Licencia') ? 'bg-purple-50 text-purple-700' : 'bg-orange-50 text-orange-700'}`}>
+                    {item.tipo}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-gray-600">
+                    <div className="text-gray-400">Fechas</div>
+                    <div className="font-medium">{item.fecha_inicio} <span className="text-gray-400">al</span> {item.fecha_fin}</div>
+                  </div>
+                  <div className="text-gray-600">
+                    <div className="text-gray-400">Días</div>
+                    <div className="font-bold text-gray-700">{item.dias}</div>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs">
+                  <div className="text-gray-400">Motivo</div>
+                  <div className="text-gray-600">{item.motivo || '-'}</div>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {item.documento && (
+                      <a 
+                        href={`${API_URL}public_files.php?path=${encodeURIComponent(item.documento)}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 text-xs"
+                        title="Ver documento"
+                      >
+                        <FileText size={16} /> Ver doc
+                      </a>
+                    )}
+                    <div className="text-xs">
+                      {getStatusBadge(item.estado)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {renderActions(item)}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -480,6 +541,19 @@ const VacacionesPermisos = () => {
                     </div>
                   </div>
               )}
+              {editingId && formData.documento_url && (
+                <div className="mt-4">
+                  <label className="block text-sm font-medium mb-1">Documento adjunto</label>
+                  <a
+                    href={`${API_URL}public_files.php?path=${encodeURIComponent(formData.documento_url)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 px-3 py-2 border border-blue-200 rounded-lg bg-blue-50"
+                  >
+                    <FileText size={18} /> Ver documento
+                  </a>
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-4">
                 <button type="button" onClick={() => {
                     setModalOpen(false);
@@ -491,6 +565,7 @@ const VacacionesPermisos = () => {
           </div>
         </div>
       )}
+      
 
       {/* Balance Modal */}
       {balanceModalOpen && (

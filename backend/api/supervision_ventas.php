@@ -22,11 +22,12 @@ try {
         switch ($action) {
             case 'reports':
                 // 1. Ventas por Área
-                $sqlArea = "SELECT COALESCE(a.nombre, 'Sin Área') as area, SUM(c.total_importe) as total
+                $sqlArea = "SELECT COALESCE(a.nombre, 'Sin Área') as area, 
+                            SUM(CASE WHEN c.tipo_comprobante = '07' THEN -c.total_importe ELSE c.total_importe END) as total
                             FROM comprobantes_electronicos c
                             LEFT JOIN usuarios u ON c.usuario_id = u.id
                             LEFT JOIN areas a ON u.area_id = a.id
-                            WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado != 'Anulado'
+                            WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado NOT IN ('Anulado','Generado')
                             GROUP BY a.nombre
                             ORDER BY total DESC";
                 $stmt = $conn->prepare($sqlArea);
@@ -34,10 +35,12 @@ try {
                 $salesByArea = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                 // 2. Ventas por Vendedor (Ranking Comercial)
-                $sqlSeller = "SELECT u.usuario as vendedor, SUM(c.total_importe) as total, COUNT(*) as cantidad
+                $sqlSeller = "SELECT u.usuario as vendedor, 
+                              SUM(CASE WHEN c.tipo_comprobante = '07' THEN -c.total_importe ELSE c.total_importe END) as total, 
+                              COUNT(*) as cantidad
                               FROM comprobantes_electronicos c
                               LEFT JOIN usuarios u ON c.usuario_id = u.id
-                              WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado != 'Anulado'
+                              WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado NOT IN ('Anulado','Generado')
                               GROUP BY u.usuario 
                               ORDER BY total DESC";
                 $stmt = $conn->prepare($sqlSeller);
@@ -45,10 +48,12 @@ try {
                 $salesBySeller = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                 // 3. Ventas por Producto
-                $sqlProduct = "SELECT d.descripcion, SUM(d.cantidad) as cantidad, SUM(d.valor_venta) as total
+                $sqlProduct = "SELECT d.descripcion, 
+                               SUM(d.cantidad) as cantidad, 
+                               SUM(CASE WHEN c.tipo_comprobante = '07' THEN -d.valor_venta ELSE d.valor_venta END) as total
                                FROM comprobantes_electronicos_detalle d
                                JOIN comprobantes_electronicos c ON d.comprobante_id = c.id
-                               WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado != 'Anulado'
+                               WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado NOT IN ('Anulado','Generado')
                                GROUP BY d.descripcion 
                                ORDER BY total DESC LIMIT 10";
                 $stmt = $conn->prepare($sqlProduct);
@@ -57,12 +62,12 @@ try {
 
                 // 4. Márgenes
                 $sqlMargins = "SELECT 
-                                SUM(d.valor_venta) as ventas_netas,
+                                SUM(CASE WHEN c.tipo_comprobante = '07' THEN -d.valor_venta ELSE d.valor_venta END) as ventas_netas,
                                 SUM(d.cantidad * COALESCE(p.precio_compra, 0)) as costo_estimado
                                FROM comprobantes_electronicos_detalle d
                                JOIN comprobantes_electronicos c ON d.comprobante_id = c.id
                                LEFT JOIN productos p ON d.item_codigo = p.codigo_interno
-                               WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado != 'Anulado'";
+                               WHERE c.fecha_emision BETWEEN :start AND :end AND c.estado NOT IN ('Anulado','Generado')";
                 $stmt = $conn->prepare($sqlMargins);
                 $stmt->execute([':start' => $startDate, ':end' => $endDate]);
                 $margins = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -79,8 +84,10 @@ try {
                 $currentDay = date('j');
                 
                 // Get sales for current month only for projection
-                $sqlMonth = "SELECT SUM(total_importe) as total FROM comprobantes_electronicos 
-                             WHERE MONTH(fecha_emision) = :m AND YEAR(fecha_emision) = :y AND estado != 'Anulado'";
+                $sqlMonth = "SELECT 
+                                SUM(CASE WHEN tipo_comprobante = '07' THEN -total_importe ELSE total_importe END) as total 
+                             FROM comprobantes_electronicos 
+                             WHERE MONTH(fecha_emision) = :m AND YEAR(fecha_emision) = :y AND estado NOT IN ('Anulado','Generado')";
                 $stmt = $conn->prepare($sqlMonth);
                 $stmt->execute([':m' => $currentMonth, ':y' => $currentYear]);
                 $monthTotal = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;

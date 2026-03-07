@@ -11,7 +11,9 @@ import {
     DollarSign, 
     CreditCard,
     Filter,
-    Mail
+    Mail,
+    UploadCloud,
+    Trash2
 } from 'lucide-react';
 
 const BoletasPago = () => {
@@ -26,9 +28,13 @@ const BoletasPago = () => {
     const [pdfUrl, setPdfUrl] = useState('');
     const [selectedDetalle, setSelectedDetalle] = useState(null);
     const [withSignature, setWithSignature] = useState(true);
+    const [signatureUploading, setSignatureUploading] = useState(false);
+    const [signatureInfo, setSignatureInfo] = useState({ exists: false, path: null });
+    const [signatureLoading, setSignatureLoading] = useState(false);
 
     useEffect(() => {
         fetchPlanillas();
+        fetchSignatureInfo();
     }, []);
 
     useEffect(() => {
@@ -56,6 +62,21 @@ const BoletasPago = () => {
         } catch (error) {
             console.error('Error cargando planillas', error);
             toast.error('Error al cargar planillas');
+        }
+    };
+
+    const fetchSignatureInfo = async () => {
+        setSignatureLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const resp = await axios.get(`${API_URL}/boletas.php?action=get_signature`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setSignatureInfo(resp.data);
+        } catch (error) {
+            setSignatureInfo({ exists: false, path: null });
+        } finally {
+            setSignatureLoading(false);
         }
     };
 
@@ -130,6 +151,49 @@ const BoletasPago = () => {
         });
     };
 
+    const handleSignatureUploadChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setSignatureUploading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const formData = new FormData();
+            formData.append('firma', file);
+            const response = await axios.post(`${API_URL}/boletas.php?action=upload_signature`, formData, {
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
+            });
+            if (response.data?.success) {
+                toast.success('Firma de gerencia actualizada');
+                fetchSignatureInfo();
+            } else {
+                toast.success('Firma subida');
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.error || 'Error al subir la firma');
+        } finally {
+            setSignatureUploading(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleDeleteSignature = async () => {
+        if (!confirm('¿Eliminar la firma de gerencia?')) return;
+        try {
+            const token = localStorage.getItem('token');
+            const resp = await axios.post(`${API_URL}/boletas.php?action=delete_signature`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (resp.data?.success) {
+                toast.success('Firma de gerencia eliminada');
+                fetchSignatureInfo();
+            } else {
+                toast.error('No se pudo eliminar la firma');
+            }
+        } catch (error) {
+            toast.error(error.response?.data?.error || 'Error al eliminar la firma');
+        }
+    };
+
     const closeModal = () => {
         setShowModal(false);
         setPdfUrl('');
@@ -169,6 +233,47 @@ const BoletasPago = () => {
                         Boletas de Pago
                     </h1>
                     <p className="text-gray-500 mt-1">Gestión y emisión de boletas de pago para colaboradores</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 px-3 py-2 bg-white border border-gray-200 rounded-lg">
+                        <div className="w-32 h-10 flex items-center justify-center bg-gray-50 rounded-md overflow-hidden">
+                            {signatureLoading ? (
+                                <span className="text-gray-400 text-sm">Cargando...</span>
+                            ) : signatureInfo?.exists ? (
+                                <img 
+                                    src={`${API_URL}/public_files.php?path=${encodeURIComponent(signatureInfo.path)}`} 
+                                    alt="Firma Gerencia" 
+                                    className="max-h-10 object-contain"
+                                />
+                            ) : (
+                                <span className="text-gray-400 text-sm">Sin firma</span>
+                            )}
+                        </div>
+                    </div>
+                    <input 
+                        id="firmaGerenciaInput" 
+                        type="file" 
+                        accept="image/png,image/jpeg" 
+                        className="hidden" 
+                        onChange={handleSignatureUploadChange} 
+                    />
+                    <label 
+                        htmlFor="firmaGerenciaInput" 
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all text-sm font-medium shadow-sm cursor-pointer"
+                        title="Subir imagen de firma de gerencia"
+                    >
+                        <UploadCloud size={16} />
+                        {signatureUploading ? 'Subiendo...' : 'Subir Firma Gerencia'}
+                    </label>
+                    <button
+                        onClick={handleDeleteSignature}
+                        className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-red-200 rounded-lg text-red-600 hover:bg-red-50 hover:border-red-300 transition-all text-sm font-medium shadow-sm"
+                        title="Eliminar firma de gerencia"
+                        disabled={!signatureInfo?.exists}
+                    >
+                        <Trash2 size={16} />
+                        Eliminar
+                    </button>
                 </div>
             </div>
 

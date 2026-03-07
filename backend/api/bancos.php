@@ -181,7 +181,7 @@ switch ($action) {
             
             // 1. Insertar Movimiento
             $sql = "INSERT INTO bancos_movimientos (cuenta_id, tipo, origen_destino, monto, concepto, referencia, entidad, usuario_id, fecha) 
-                    VALUES (:cid, :tipo, :origen, :monto, :concepto, :ref, :entidad, :uid, NOW())";
+                    VALUES (:cid, :tipo, :origen, :monto, :concepto, :ref, :entidad, :uid, IFNULL(:fecha, NOW()))";
             $stmt = $conn->prepare($sql);
             $stmt->execute([
                 ':cid' => $data['cuenta_id'],
@@ -191,7 +191,8 @@ switch ($action) {
                 ':concepto' => $data['concepto'],
                 ':ref' => $data['referencia'] ?? '',
                 ':entidad' => $data['entidad'] ?? '',
-                ':uid' => $usuario_id
+                ':uid' => $usuario_id,
+                ':fecha' => isset($data['fecha']) ? $data['fecha'] : null
             ]);
             $movimiento_id = $conn->lastInsertId();
 
@@ -277,13 +278,14 @@ switch ($action) {
 
             // 1. Salida de Origen
             $sql = "INSERT INTO bancos_movimientos (cuenta_id, tipo, monto, concepto, referencia, usuario_id, fecha) 
-                    VALUES (:cid, 'Transferencia', :monto, :concepto, :ref, :uid, NOW())";
+                    VALUES (:cid, 'Transferencia', :monto, :concepto, :ref, :uid, IFNULL(:fecha, NOW()))";
             $conn->prepare($sql)->execute([
                 ':cid' => $data['cuenta_origen'],
                 ':monto' => $data['monto'],
                 ':concepto' => 'Transferencia a ' . $nombre_destino, 
                 ':ref' => $data['referencia'],
-                ':uid' => $usuario_id
+                ':uid' => $usuario_id,
+                ':fecha' => isset($data['fecha']) ? $data['fecha'] : null
             ]);
             // Actualizar Saldo Origen
             $conn->prepare("UPDATE bancos_cuentas SET saldo_actual = saldo_actual - :m WHERE id = :id")
@@ -292,13 +294,14 @@ switch ($action) {
             // 2. Entrada a Destino (si es interna)
             if (!empty($data['cuenta_destino_id'])) {
                 $sql = "INSERT INTO bancos_movimientos (cuenta_id, tipo, monto, concepto, referencia, usuario_id, fecha) 
-                        VALUES (:cid, 'Ingreso', :monto, :concepto, :ref, :uid, NOW())";
+                        VALUES (:cid, 'Ingreso', :monto, :concepto, :ref, :uid, IFNULL(:fecha, NOW()))";
                 $conn->prepare($sql)->execute([
                     ':cid' => $data['cuenta_destino_id'],
                     ':monto' => $data['monto'],
                     ':concepto' => 'Transferencia desde ' . $nombre_origen,
                     ':ref' => $data['referencia'],
-                    ':uid' => $usuario_id
+                    ':uid' => $usuario_id,
+                    ':fecha' => isset($data['fecha']) ? $data['fecha'] : null
                 ]);
                 // Actualizar Saldo Destino
                 $conn->prepare("UPDATE bancos_cuentas SET saldo_actual = saldo_actual + :m WHERE id = :id")
@@ -334,14 +337,15 @@ switch ($action) {
             // Aqui lo trataremos como egreso inmediato para simplificar saldo contable.
             
             $sql = "INSERT INTO bancos_movimientos (cuenta_id, tipo, origen_destino, monto, concepto, referencia, entidad, usuario_id, fecha) 
-                    VALUES (:cid, 'Egreso', 'Cheque', :monto, :concepto, :ref, :entidad, :uid, NOW())";
+                    VALUES (:cid, 'Egreso', 'Cheque', :monto, :concepto, :ref, :entidad, :uid, IFNULL(:fecha, NOW()))";
             $conn->prepare($sql)->execute([
                 ':cid' => $data['cuenta_id'],
                 ':monto' => $data['monto'],
                 ':concepto' => 'Cheque Girado: ' . $data['numero_cheque'],
                 ':ref' => $data['numero_cheque'],
                 ':entidad' => $data['beneficiario'],
-                ':uid' => $usuario_id
+                ':uid' => $usuario_id,
+                ':fecha' => !empty($data['fecha_emision']) ? ($data['fecha_emision'] . ' 00:00:00') : null
             ]);
             $mov_id = $conn->lastInsertId();
 

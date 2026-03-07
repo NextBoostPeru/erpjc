@@ -34,12 +34,121 @@ if (!$userData) {
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? null;
 $uploadDir = __DIR__ . '/uploads/contratos/';
+$signatureDir = __DIR__ . '/uploads/contratos_firmas/';
 
 if (!file_exists($uploadDir)) {
     mkdir($uploadDir, 0777, true);
 }
+if (!file_exists($signatureDir)) {
+    mkdir($signatureDir, 0777, true);
+}
 
 try {
+    // Ensure regimen_pensionario column exists
+    try {
+        $chk = $conn->query("SHOW COLUMNS FROM contratos LIKE 'regimen_pensionario'");
+        if ($chk->rowCount() == 0) {
+            $conn->exec("ALTER TABLE contratos ADD COLUMN regimen_pensionario ENUM('ONP','AFP Integra','AFP Prima','AFP Profuturo','AFP Habitat') NULL AFTER salario");
+        }
+    } catch (Exception $e) {}
+    // Ensure asignacion_familiar column exists
+    try {
+        $chk2 = $conn->query("SHOW COLUMNS FROM contratos LIKE 'asignacion_familiar'");
+        if ($chk2->rowCount() == 0) {
+            $conn->exec("ALTER TABLE contratos ADD COLUMN asignacion_familiar TINYINT(1) DEFAULT 0 AFTER regimen_pensionario");
+        }
+    } catch (Exception $e) {}
+    // Ensure afp_cuspp column exists (Código Único del SPP)
+    try {
+        $chk3 = $conn->query("SHOW COLUMNS FROM contratos LIKE 'afp_cuspp'");
+        if ($chk3->rowCount() == 0) {
+            $conn->exec("ALTER TABLE contratos ADD COLUMN afp_cuspp VARCHAR(20) NULL AFTER asignacion_familiar");
+        }
+    } catch (Exception $e) {}
+    if ($action === 'download' && $method === 'GET') {
+        $reqPath = $_GET['file'] ?? '';
+        if (!$reqPath) {
+            http_response_code(400);
+            echo json_encode(["error" => "Falta parámetro 'file'"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        $reqPath = str_replace('\\', '/', $reqPath);
+        // Strip query/hash if present to avoid filesystem lookup issues
+        $reqPath = preg_split('/[?#]/', $reqPath, 2)[0];
+        if (strpos($reqPath, 'uploads/') !== 0) {
+            http_response_code(403);
+            echo json_encode(["error" => "Ruta no permitida"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        $fullPath = __DIR__ . '/' . $reqPath;
+        $real = realpath($fullPath);
+        $realBase = realpath(__DIR__ . '/uploads/contratos/');
+        if (!$real || strpos($real, $realBase) !== 0 || !file_exists($real)) {
+            http_response_code(404);
+            echo json_encode(["error" => "Archivo no encontrado"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        header("Content-Type: application/pdf");
+        header("Content-Length: " . filesize($real));
+        header("Cache-Control: private, max-age=60");
+        readfile($real);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+    // Firma de Gerencia: CRUD
+    if ($action === 'upload_signature' && $method === 'POST') {
+        if (!isset($_FILES['firma']) || $_FILES['firma']['error'] !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            echo json_encode(["message" => "Archivo de firma requerido"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        $ext = strtolower(pathinfo($_FILES['firma']['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['png', 'jpg', 'jpeg'])) {
+            http_response_code(400);
+            echo json_encode(["message" => "Formato inválido. Solo PNG/JPG"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        $filename = 'firma_gerente_' . time() . '_' . uniqid() . '.' . $ext;
+        if (!move_uploaded_file($_FILES['firma']['tmp_name'], $signatureDir . $filename)) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error al subir la firma"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        $relativePath = '/uploads/contratos_firmas/' . $filename;
+        $stmt = $conn->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES ('firma_gerente_contrato', :val)
+                                ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+        $stmt->execute([':val' => $relativePath]);
+        echo json_encode(["success" => true, "path" => $relativePath]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+    if ($action === 'get_signature' && $method === 'GET') {
+        $stmtSig = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'firma_gerente_contrato' LIMIT 1");
+        $stmtSig->execute();
+        $sigRel = $stmtSig->fetchColumn();
+        echo json_encode(["exists" => !empty($sigRel), "path" => $sigRel]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+    if ($action === 'delete_signature' && ($method === 'DELETE' || $method === 'POST')) {
+        $stmtSig = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'firma_gerente_contrato' LIMIT 1");
+        $stmtSig->execute();
+        $sigRel = $stmtSig->fetchColumn();
+        if (!empty($sigRel)) {
+            $fsPath = __DIR__ . '/' . ltrim($sigRel, '/');
+            if (file_exists($fsPath)) { @unlink($fsPath); }
+        }
+        $conn->prepare("DELETE FROM system_settings WHERE setting_key = 'firma_gerente_contrato'")->execute();
+        echo json_encode(["success" => true, "message" => "Firma eliminada"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
     if ($action === 'stats' && $method === 'GET') {
         $stats = [
             'total' => 0,
@@ -216,6 +325,20 @@ try {
         }
 
         // Add Signatures Block (Common)
+        // Firma de Gerencia (imagen)
+        $stmtSig = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'firma_gerente_contrato' LIMIT 1");
+        $stmtSig->execute();
+        $sigRel = $stmtSig->fetchColumn();
+        $firmaImgHtml = "";
+        if (!empty($sigRel)) {
+            $fsPath = __DIR__ . '/' . ltrim($sigRel, '/');
+            if (file_exists($fsPath)) {
+                $mime = function_exists('mime_content_type') ? mime_content_type($fsPath) : 'image/png';
+                $base64 = base64_encode(file_get_contents($fsPath));
+                $firmaImgHtml = '<img src="data:' . $mime . ';base64,' . $base64 . '" style="height:70px; margin-bottom:5px;" />';
+            }
+        }
+
         $body_content .= "
             <div class='section'>
                 Leído el presente contrato y estando las partes conformes con su contenido, lo firman en señal de aceptación en la ciudad de Lima, el día <strong>" . $fecha_dia . "</strong> de <strong>" . $fecha_mes . "</strong> del <strong>" . $fecha_anio . "</strong>.
@@ -223,7 +346,7 @@ try {
 
             <div class='signatures'>
                 <div class='sig-box'>
-                    <br><br>
+                    " . $firmaImgHtml . "
                     <strong>{$denominacion_empleador}</strong><br>
                     {$empresa['razon_social']}<br>
                     RUC: {$empresa['ruc']}
@@ -484,6 +607,9 @@ try {
                     fecha_inicio = :fecha_inicio,
                     fecha_fin = :fecha_fin,
                     salario = :salario,
+                    regimen_pensionario = :regimen_pensionario,
+                    afp_cuspp = :afp_cuspp,
+                    asignacion_familiar = :asignacion_familiar,
                     estado = :estado,
                     observaciones = :observaciones,
                     cargo = :cargo,
@@ -493,6 +619,9 @@ try {
                 
                 $params[':cargo'] = $data['cargo'] ?? null;
                 $params[':area'] = $data['area'] ?? null;
+                $params[':regimen_pensionario'] = $data['regimen_pensionario'] ?? null;
+                $params[':afp_cuspp'] = !empty($data['afp_cuspp']) ? strtoupper($data['afp_cuspp']) : null;
+                $params[':asignacion_familiar'] = !empty($data['asignacion_familiar']) ? 1 : 0;
 
                 $stmt = $conn->prepare($sql);
                 $stmt->execute($params);
@@ -532,9 +661,9 @@ try {
 
                 // Insert
                 $sql = "INSERT INTO contratos (
-                colaborador_id, tipo_contrato, fecha_inicio, fecha_fin, salario, archivo_url, estado, observaciones, cargo, area, horas_trabajo
+                colaborador_id, tipo_contrato, fecha_inicio, fecha_fin, salario, regimen_pensionario, afp_cuspp, asignacion_familiar, archivo_url, estado, observaciones, cargo, area, horas_trabajo
             ) VALUES (
-                :colaborador_id, :tipo_contrato, :fecha_inicio, :fecha_fin, :salario, :archivo_url, :estado, :observaciones, :cargo, :area, :horas_trabajo
+                :colaborador_id, :tipo_contrato, :fecha_inicio, :fecha_fin, :salario, :regimen_pensionario, :afp_cuspp, :asignacion_familiar, :archivo_url, :estado, :observaciones, :cargo, :area, :horas_trabajo
             )";
             $stmt = $conn->prepare($sql);
             $stmt->execute([
@@ -543,6 +672,9 @@ try {
                 ':fecha_inicio' => $data['fecha_inicio'],
                 ':fecha_fin' => !empty($data['fecha_fin']) ? $data['fecha_fin'] : null,
                 ':salario' => !empty($data['salario']) ? $data['salario'] : null,
+                ':regimen_pensionario' => $data['regimen_pensionario'] ?? null,
+                ':afp_cuspp' => !empty($data['afp_cuspp']) ? strtoupper($data['afp_cuspp']) : null,
+                ':asignacion_familiar' => !empty($data['asignacion_familiar']) ? 1 : 0,
                 ':archivo_url' => $archivo_url,
                 ':estado' => $data['estado'] ?? 'Vigente',
                 ':observaciones' => $data['observaciones'] ?? '',

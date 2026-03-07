@@ -81,20 +81,39 @@ switch ($action) {
         if ($page) {
             $offset = ($page - 1) * $limit;
             
-            // Count and Summary
+            // Count and Summary (NC resta, ND suma) y excluye Anulado/Generado
             $countSql = "SELECT COUNT(*) as total_rows,
-                                COUNT(CASE WHEN estado != 'Anulado' THEN 1 END) as total_activos,
-                                SUM(CASE WHEN estado != 'Anulado' THEN total_importe ELSE 0 END) as total_ventas,
-                                SUM(CASE WHEN estado != 'Anulado' THEN total_igv ELSE 0 END) as total_igv
+                                COUNT(CASE WHEN estado NOT IN ('Anulado','Generado') THEN 1 END) as total_activos,
+                                SUM(
+                                    CASE 
+                                        WHEN estado NOT IN ('Anulado','Generado') THEN 
+                                            CASE WHEN tipo_comprobante = '07' THEN -total_importe ELSE total_importe END
+                                        ELSE 0 
+                                    END
+                                ) as total_ventas,
+                                SUM(
+                                    CASE 
+                                        WHEN estado NOT IN ('Anulado','Generado') THEN 
+                                            CASE WHEN tipo_comprobante = '07' THEN -total_igv ELSE total_igv END
+                                        ELSE 0 
+                                    END
+                                ) as total_igv
                          FROM comprobantes_electronicos WHERE $whereSql";
             $stmtCount = $conn->prepare($countSql);
             $stmtCount->execute($params);
             $summary = $stmtCount->fetch(PDO::FETCH_ASSOC);
 
-            // Daily Sales for Chart
-            $chartSql = "SELECT DATE(fecha_emision) as fecha, SUM(total_importe) as total 
+            // Daily Sales for Chart (NC resta) y excluye Anulado/Generado
+            $chartSql = "SELECT DATE(fecha_emision) as fecha, 
+                         SUM(
+                            CASE 
+                                WHEN estado NOT IN ('Anulado','Generado') THEN 
+                                    CASE WHEN tipo_comprobante = '07' THEN -total_importe ELSE total_importe END
+                                ELSE 0
+                            END
+                         ) as total 
                          FROM comprobantes_electronicos 
-                         WHERE $whereSql AND estado != 'Anulado'
+                         WHERE $whereSql
                          GROUP BY DATE(fecha_emision) 
                          ORDER BY fecha ASC";
             $stmtChart = $conn->prepare($chartSql);
@@ -135,7 +154,7 @@ switch ($action) {
         } else {
             // Optimized: Limit 5000 for monthly dump to prevent memory exhaustion
             $sql = "SELECT * FROM comprobantes_electronicos 
-                    WHERE $whereSql 
+                    WHERE $whereSql AND estado NOT IN ('Anulado','Generado')
                     ORDER BY fecha_emision DESC, correlativo DESC
                     LIMIT 5000";
             $stmt = $conn->prepare($sql);
@@ -143,6 +162,120 @@ switch ($action) {
             $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
             $conn = null;
             echo json_encode($data);
+        }
+        break;
+
+    case 'listar_cuotas':
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID requerido"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        try {
+            $stmt = $conn->prepare("SELECT id, cuota_nro, fecha_pago, monto FROM comprobantes_cuotas WHERE comprobante_id = :cid ORDER BY cuota_nro ASC");
+            $stmt->execute([':cid' => $id]);
+            $cuotas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Adjuntos por cuota
+            try {
+                $conn->query("CREATE TABLE IF NOT EXISTS comprobantes_cuotas_adjuntos (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    cuota_id INT NOT NULL,
+                    path VARCHAR(255) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+            } catch (Exception $e) {}
+
+            $stmtAdj = $conn->prepare("SELECT cuota_id, path FROM comprobantes_cuotas_adjuntos WHERE cuota_id IN (" . implode(',', array_map(function($c){ return (int)$c['id']; }, $cuotas ?: [])) . ")");
+            if (!empty($cuotas)) {
+                $stmtAdj->execute();
+                $rowsAdj = $stmtAdj->fetchAll(PDO::FETCH_ASSOC);
+                $map = [];
+                foreach ($rowsAdj as $row) {
+                    $map[$row['cuota_id']][] = $row['path'];
+                }
+                foreach ($cuotas as &$c) {
+                    $c['adjuntos'] = $map[$c['id']] ?? [];
+                }
+            }
+
+            echo json_encode(['data' => $cuotas ?: []]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error: " . $e->getMessage()]);
+        } finally {
+            if (isset($conn)) $conn = null;
+        }
+        break;
+
+    case 'subir_adjuntos_cuota':
+        // Permite subir uno o más archivos por cuota específica
+        $cuota_id = isset($_POST['cuota_id']) ? (int)$_POST['cuota_id'] : 0;
+        if ($cuota_id <= 0) {
+            http_response_code(400);
+            echo json_encode(["message" => "Cuota ID requerido"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        try {
+            // Verificar cuota existe
+            $stmt = $conn->prepare("SELECT id, comprobante_id FROM comprobantes_cuotas WHERE id = ?");
+            $stmt->execute([$cuota_id]);
+            $cuota = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$cuota) {
+                http_response_code(404);
+                echo json_encode(["message" => "Cuota no encontrada"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            // Crear tabla adjuntos si no existe
+            $conn->query("CREATE TABLE IF NOT EXISTS comprobantes_cuotas_adjuntos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                cuota_id INT NOT NULL,
+                path VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+            // Subir archivos
+            $files = [];
+            if (isset($_FILES['archivos_cuota'])) {
+                $files = normalizeUploadFiles($_FILES['archivos_cuota']);
+            }
+            if (empty($files)) {
+                http_response_code(400);
+                echo json_encode(["message" => "Debe seleccionar al menos un archivo"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            // Upload to subcarpeta cuotas
+            $uploadDir = __DIR__ . '/uploads/ventas/cuotas/';
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+
+            $stmtIns = $conn->prepare("INSERT INTO comprobantes_cuotas_adjuntos (cuota_id, path) VALUES (:cid, :path)");
+            $saved = 0;
+            foreach ($files as $file) {
+                $ext = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $filename = 'cuota_' . $cuota_id . '_' . uniqid() . '.' . $ext;
+                $targetPath = $uploadDir . $filename;
+                if (move_uploaded_file($file['tmp_name'], $targetPath)) {
+                    $publicPath = 'uploads/ventas/cuotas/' . $filename;
+                    $stmtIns->execute([':cid' => $cuota_id, ':path' => $publicPath]);
+                    $saved++;
+                }
+            }
+
+            echo json_encode(["message" => "Adjuntos de cuota cargados ($saved archivo(s))"]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error: " . $e->getMessage()]);
+        } finally {
+            if (isset($conn)) $conn = null;
         }
         break;
 

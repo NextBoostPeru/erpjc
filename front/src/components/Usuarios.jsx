@@ -18,6 +18,8 @@ const Usuarios = () => {
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -150,11 +152,24 @@ const Usuarios = () => {
     }
   };
 
-  const filteredUsers = users.filter(user => 
-    user.usuario.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (user.nombre_real && user.nombre_real.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredUsers = users
+    .filter(user => {
+      const rolName = String(user.rol_nombre || user.rol || '').toLowerCase();
+      if (rolName === 'user') return false;
+      return true;
+    })
+    .filter(user => 
+      user.usuario.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.nombre_real && user.nombre_real.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+  
+  const totalItems = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const startIdx = (safePage - 1) * limit;
+  const endIdx = startIdx + limit;
+  const paginatedUsers = filteredUsers.slice(startIdx, endIdx);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -200,6 +215,7 @@ const Usuarios = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                <th className="p-4 border-b w-16 text-center">#</th>
                 <th className="p-4 border-b">Usuario / Nombre</th>
                 <th className="p-4 border-b">Contacto</th>
                 <th className="p-4 border-b">Rol / Área</th>
@@ -211,11 +227,14 @@ const Usuarios = () => {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr><td colSpan="6" className="p-8 text-center text-gray-500">Cargando usuarios...</td></tr>
-              ) : filteredUsers.length === 0 ? (
+              ) : paginatedUsers.length === 0 ? (
                 <tr><td colSpan="6" className="p-8 text-center text-gray-500">No se encontraron usuarios.</td></tr>
               ) : (
-                filteredUsers.map(user => (
+                paginatedUsers.map((user, idx) => (
                   <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-4 text-center text-sm text-gray-500 font-medium">
+                      {(safePage - 1) * limit + idx + 1}
+                    </td>
                     <td className="p-4">
                       <div className="flex flex-col">
                         <span className="font-semibold text-gray-800">{user.usuario}</span>
@@ -288,6 +307,40 @@ const Usuarios = () => {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="p-4 border-t flex flex-col md:flex-row items-center justify-between gap-3">
+          <span className="text-sm text-gray-500">
+            {totalItems > 0
+              ? `Mostrando ${startIdx + 1}–${Math.min(endIdx, totalItems)} de ${totalItems} usuarios`
+              : 'Sin resultados'}
+          </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={limit}
+              onChange={(e) => { setLimit(parseInt(e.target.value, 10)); setPage(1); }}
+              className="px-3 py-2 border border-gray-300 rounded-md bg-white text-sm"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setPage(Math.max(safePage - 1, 1))}
+              disabled={safePage === 1}
+              className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage(Math.min(safePage + 1, totalPages))}
+              disabled={safePage === totalPages}
+              className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
+            >
+              Siguiente
+            </button>
+          </div>
         </div>
       </div>
 

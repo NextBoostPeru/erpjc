@@ -35,6 +35,8 @@ const GestionContratos = () => {
   });
 
   const [currentStep, setCurrentStep] = useState(1);
+  const [sigPath, setSigPath] = useState(null);
+  const [sigLoading, setSigLoading] = useState(false);
 
   const initialFormState = {
     colaborador_id: '',
@@ -53,6 +55,9 @@ const GestionContratos = () => {
     cargo: '',
     area: '',
     horas_trabajo: '48 horas semanales',
+    regimen_pensionario: 'ONP',
+    afp_cuspp: '',
+    asignacion_familiar: 0,
     estado: 'Vigente',
     observaciones: '',
     archivo: null,
@@ -62,6 +67,31 @@ const GestionContratos = () => {
   const [formData, setFormData] = useState(initialFormState);
   const [editingId, setEditingId] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [submitRequested, setSubmitRequested] = useState(false);
+
+  const loadPreviewFromUrl = async (url) => {
+    try {
+      const extractUploadsPath = (u) => {
+        const base = String(u).split('?')[0].split('#')[0];
+        const match = base.match(/uploads\/.+$/);
+        if (match) return match[0];
+        const cleaned = base.replace(/^\//, '');
+        return cleaned.startsWith('uploads/') ? cleaned : `uploads/contratos/${cleaned}`;
+      };
+      const publicPath = extractUploadsPath(url);
+      const token = localStorage.getItem('token') || '';
+      const downloadUrl = `${API_URL}contratos.php?action=download&file=${encodeURIComponent(publicPath)}`;
+      const res = await axios.get(downloadUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        responseType: 'blob'
+      });
+      const blobUrl = URL.createObjectURL(res.data);
+      setFilePreview(blobUrl);
+    } catch (e) {
+      toast.error("Archivo no encontrado");
+      setFilePreview(null);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -110,6 +140,26 @@ const GestionContratos = () => {
       setLoading(false);
     }
   };
+  
+  const fetchSignature = async () => {
+    try {
+      setSigLoading(true);
+      const res = await axios.get(`${API_URL}contratos.php?action=get_signature`);
+      if (res.data && res.data.exists) {
+        setSigPath(res.data.path);
+      } else {
+        setSigPath(null);
+      }
+    } catch (e) {
+      setSigPath(null);
+    } finally {
+      setSigLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    fetchSignature();
+  }, []);
 
   const fetchRoles = async () => {
     try {
@@ -252,11 +302,9 @@ const GestionContratos = () => {
                 setFormData({
                     ...formData,
                     generated_filename: response.data.filename,
-                    archivo: null // Clear manual upload if any
+                    archivo: null
                 });
-                // Construct full URL for preview since backend returns relative path
-                const baseUrl = API_URL.replace(/\/$/, '');
-                setFilePreview(baseUrl + response.data.url);
+                await loadPreviewFromUrl(response.data.url);
                 toast.success("Contrato generado exitosamente. Puede visualizarlo antes de guardar.");
             }
         } catch (error) {
@@ -294,6 +342,12 @@ const GestionContratos = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!submitRequested) return;
+    if (currentStep < 3) return;
+    if (String(formData.regimen_pensionario || '').startsWith('AFP') && !String(formData.afp_cuspp || '').trim()) {
+      toast.error("Ingrese el CUSPP para AFP");
+      return;
+    }
     
     const data = new FormData();
     Object.keys(formData).forEach(key => {
@@ -321,18 +375,19 @@ const GestionContratos = () => {
     } catch (error) {
       toast.error(error.response?.data?.message || "Error al guardar");
     }
+    setSubmitRequested(false);
   };
 
   const handleEdit = async (item) => {
     setEditingId(item.id);
-    setFilePreview(item.archivo_url);
+    setFilePreview(null);
     setModalOpen(true);
     setCurrentStep(2); // Go directly to contract details
 
     // Initial state with available data
     setFormData({
         colaborador_id: item.colaborador_id,
-        tipo_contrato: item.tipo_contrato || '',
+        tipo_contrato: (item.tipo_contrato === 'Plazo Determinado' ? 'Plazo Fijo' : item.tipo_contrato) || '',
         fecha_inicio: item.fecha_inicio,
         fecha_fin: item.fecha_fin || '',
         salario: item.salario || '',
@@ -350,6 +405,9 @@ const GestionContratos = () => {
         celular: '',
         rol_id: '',
         horas_trabajo: '48 horas semanales',
+        regimen_pensionario: item.regimen_pensionario || 'ONP',
+        afp_cuspp: item.afp_cuspp || '',
+        asignacion_familiar: item.asignacion_familiar ? 1 : 0,
         generated_filename: null
     });
 
@@ -404,7 +462,9 @@ const GestionContratos = () => {
         direccion: '', 
         correo: '',
         celular: '',
-        rol_id: ''
+        rol_id: '',
+        regimen_pensionario: item.regimen_pensionario || 'ONP',
+        afp_cuspp: item.afp_cuspp || ''
     });
 
     // Fetch full collaborator details
@@ -556,6 +616,75 @@ const GestionContratos = () => {
         <GestionPlantillasContratos />
       ) : (
         <>
+      {/* Firma de Gerencia (Contratos) */}
+      <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <PenTool size={16} className="text-indigo-600" />
+            Firma de Gerencia para Contratos
+          </h3>
+          {sigLoading ? (
+            <p className="text-gray-400 text-sm">Cargando...</p>
+          ) : (
+            <>
+              {sigPath ? (
+                <div className="flex items-center gap-4">
+                  <img 
+                    src={`${API_URL.replace(/\/$/, '')}${sigPath}`} 
+                    alt="Firma de Gerencia" 
+                    className="h-14 object-contain border rounded bg-white"
+                  />
+                  <button 
+                    onClick={async () => {
+                      try {
+                        await axios.post(`${API_URL}contratos.php?action=delete_signature`);
+                        toast.success("Firma eliminada");
+                        fetchSignature();
+                      } catch {
+                        toast.error("No se pudo eliminar la firma");
+                      }
+                    }}
+                    className="px-3 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 text-sm flex items-center gap-2"
+                  >
+                    <Trash2 size={16} /> Eliminar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm cursor-pointer">
+                    <Upload size={16} />
+                    <span className="ml-2">Subir Firma (PNG/JPG)</span>
+                    <input 
+                      type="file" 
+                      accept="image/png, image/jpeg" 
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append('firma', file);
+                        const toastId = toast.loading("Subiendo firma...");
+                        try {
+                          await axios.post(`${API_URL}contratos.php?action=upload_signature`, fd, {
+                            headers: { 'Content-Type': 'multipart/form-data' }
+                          });
+                          toast.success("Firma subida", { id: toastId });
+                          fetchSignature();
+                        } catch (err) {
+                          toast.error(err.response?.data?.message || "Error al subir firma", { id: toastId });
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+              <p className="text-xs text-gray-500 mt-2">
+                Esta firma se inserta automáticamente en el PDF del contrato en la sección del empleador.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
@@ -786,7 +915,15 @@ const GestionContratos = () => {
                 </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-grow">
+            <form 
+                onSubmit={handleSubmit} 
+                className="p-6 space-y-4 overflow-y-auto flex-grow"
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                    }
+                }}
+            >
                 {currentStep === 1 && (
                     <div className="space-y-4 animate-fade-in">
                         <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4">
@@ -957,6 +1094,47 @@ const GestionContratos = () => {
                                 </div>
                             </div>
                         </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sistema Pensionario</label>
+                        <select 
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={formData.regimen_pensionario}
+                            onChange={e => setFormData({...formData, regimen_pensionario: e.target.value})}
+                        >
+                            <option value="ONP">ONP</option>
+                            <option value="AFP Integra">AFP Integra</option>
+                            <option value="AFP Prima">AFP Prima</option>
+                            <option value="AFP Profuturo">AFP Profuturo</option>
+                            <option value="AFP Habitat">AFP Habitat</option>
+                        </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Código Único SPP (CUSPP)</label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none uppercase disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        placeholder="CUSPP (solo para AFP)"
+                        maxLength={20}
+                        disabled={formData.regimen_pensionario === 'ONP'}
+                        value={formData.afp_cuspp}
+                        onChange={e => setFormData({...formData, afp_cuspp: e.target.value.toUpperCase()})}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Requerido si el sistema es AFP.</p>
+                    </div>
+                    <div className="flex items-center mt-6">
+                        <label className="inline-flex items-center">
+                            <input 
+                                type="checkbox"
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                checked={!!formData.asignacion_familiar}
+                                onChange={e => setFormData({...formData, asignacion_familiar: e.target.checked ? 1 : 0})}
+                            />
+                            <span className="ml-2 text-sm text-gray-700">Asignación Familiar</span>
+                        </label>
+                    </div>
+                </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -990,12 +1168,11 @@ const GestionContratos = () => {
                                     onChange={e => setFormData({...formData, tipo_contrato: e.target.value})}
                                 >
                                     <option value="">Seleccione tipo de contrato</option>
-                                    <option value="Plazo Determinado">Plazo Determinado</option>
+                                    <option value="Plazo Fijo">Plazo Determinado</option>
                                     <option value="Plazo Fijo">Plazo Fijo</option>
                                     <option value="Indefinido">Indefinido</option>
                                     <option value="Prácticas">Prácticas</option>
                                     <option value="Locación de Servicios">Locación de Servicios</option>
-                                    <option value="Medio Tiempo">Medio Tiempo</option>
                                 </select>
                             </div>
                             <div>
@@ -1071,7 +1248,7 @@ const GestionContratos = () => {
                                     <CheckCircle size={18} />
                                     <span>Documento listo para guardar</span>
                                 </div>
-                                {filePreview && (
+                                {filePreview && !editingId && (
                                     <iframe 
                                         src={filePreview} 
                                         className="w-full flex-grow min-h-[400px] border rounded bg-white"
@@ -1133,6 +1310,7 @@ const GestionContratos = () => {
                         <button 
                             type="submit" 
                             disabled={!formData.generated_filename && !formData.archivo && !editingId} // Allow save if editing without changing file, or new file
+                            onClick={() => setSubmitRequested(true)}
                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium shadow-lg shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {editingId ? 'Actualizar Contrato' : 'Guardar Contrato'}

@@ -73,6 +73,7 @@ import Acreditaciones from './components/Acreditaciones';
 import GestionISO from './components/GestionISO';
 import GestionRetenciones from './components/GestionRetenciones';
 import GestionCoordinaciones from './components/GestionCoordinaciones';
+import Alquileres from './components/Alquileres';
 
 // Componente para interceptar respuestas 401 y añadir token
 const AxiosInterceptor = () => {
@@ -584,6 +585,12 @@ function App() {
         <Route path="/gestion-coordinaciones" element={
           <PrivateRoute>
             <GestionCoordinaciones />
+          </PrivateRoute>
+        } />
+
+        <Route path="/alquileres" element={
+          <PrivateRoute>
+            <Alquileres />
           </PrivateRoute>
         } />
 

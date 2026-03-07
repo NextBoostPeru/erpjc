@@ -64,12 +64,35 @@ const Kardex = () => {
 
   const fetchProductos = async () => {
     try {
-      const response = await axios.get(`${API_URL}/productos.php`, {
+      const response = await axios.get(`${API_URL}productos.php`, {
+        params: { page: 1, limit: 50 },
         headers: { Authorization: `Bearer ${token}` }
       });
-      setProductos(response.data);
+      const data = response.data;
+      setProductos(Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []));
     } catch (error) {
       console.error('Error fetching productos:', error);
+    }
+  };
+
+  const handleProductSearch = async (term) => {
+    const q = (term || '').trim();
+    if (q.length < 2) {
+      // do not query; show initial limited list
+      return;
+    }
+    setLoadingProducts(true);
+    try {
+      const response = await axios.get(`${API_URL}productos.php`, {
+        params: { search: q, limit: 50 },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = response.data;
+      setProductos(Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []));
+    } catch (error) {
+      console.error('Error searching productos:', error);
+    } finally {
+      setLoadingProducts(false);
     }
   };
 
@@ -309,20 +332,18 @@ const Kardex = () => {
         <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Producto *</label>
-            <select
-              name="producto_id"
+            <SearchableSelect
+              options={Array.isArray(productos) ? productos : []}
               value={filters.producto_id}
-              onChange={handleChange}
-              className="w-full border rounded-lg px-3 py-2"
-              required
-            >
-              <option value="">Seleccione Producto</option>
-              {productos.map(prod => (
-                <option key={prod.id} value={prod.id}>
-                  {prod.codigo_interno} - {prod.nombre}
-                </option>
-              ))}
-            </select>
+              onChange={(item) => setFilters({ ...filters, producto_id: item ? item.id : '' })}
+              placeholder="Buscar producto por nombre o código..."
+              labelKey="nombre"
+              valueKey="id"
+              secondaryKey="codigo_interno"
+              onSearch={handleProductSearch}
+              loading={loadingProducts}
+              className="w-full"
+            />
           </div>
 
           <div>

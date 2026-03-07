@@ -165,6 +165,8 @@ const GuiasRemision = () => {
     } catch (error) { console.error(error); }
   };
 
+ 
+
   const handleClienteSelect = (cliente) => {
     if (cliente) {
       setFormData(prev => ({
@@ -262,8 +264,8 @@ const GuiasRemision = () => {
     }
   };
 
-  const handlePrintLocal = async (guia, mode = 'download') => {
-    const toastId = toast.loading("Generando PDF...");
+  const handlePrintLocal = async (guia) => {
+    const toastId = toast.loading("Verificando PDF oficial...");
     try {
       // 1. Get full details
       const res = await axios.get(`${API_URL}guias_remision.php?id=${guia.id}`, {
@@ -271,370 +273,20 @@ const GuiasRemision = () => {
       });
       const fullGuia = res.data;
       
-      // CHECK: If official PDF link exists, open it instead of generating local
+      // If official PDF link exists, open it
       if (fullGuia.enlace_pdf) {
           window.open(fullGuia.enlace_pdf, '_blank');
           toast.dismiss(toastId);
           toast.success("Abriendo PDF Oficial de SUNAT");
           return;
-      } else if (fullGuia.estado === 'Aceptada') {
-          toast.error("Guía aceptada pero sin PDF oficial. Use el botón 'Consultar Estado' para actualizar.", { duration: 5000 });
-      }
-      
-      // 2. Get Company Info
-      let empresaData = {};
-      try {
-        const resEmp = await axios.get(`${API_URL}empresa.php`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        empresaData = resEmp.data;
-      } catch (e) {
-        console.error("Error fetching empresa", e);
-      }
-
-      // 3. Generate PDF
-      const doc = new jsPDF();
-      
-      // Colors
-      const primaryColor = [30, 58, 138]; // #1e3a8a
-      const secondaryColor = [71, 85, 105]; // #475569
-      const lightGray = [241, 245, 249]; // #f1f5f9
-
-      // --- QR CODE GENERATION ---
-      let qrBase64 = null;
-      try {
-        // Use Official PDF Link if available, otherwise use SUTRAN Data String
-        const qrData = fullGuia.enlace_pdf 
-            ? fullGuia.enlace_pdf 
-            : `${empresaData.ruc}|09|${fullGuia.serie}|${fullGuia.numero}|${fullGuia.fecha_emision}|${fullGuia.destinatario_doc}|${fullGuia.peso_bruto_total}`;
-            
-        // Use local generation instead of external API
-        qrBase64 = await QRCode.toDataURL(qrData, {
-          errorCorrectionLevel: 'M',
-          margin: 1,
-          width: 150
-        });
-      } catch (e) { console.error("QR Error", e); }
-
-      // --- HEADER ---
-      let y = 15;
-      
-      // Logo
-      if (empresaData.logo) {
-          try {
-             const logoUrl = `${API_URL}public_files.php?path=${empresaData.logo}`;
-             const logoBase64 = await getBase64ImageFromURL(logoUrl);
-             const imgProps = doc.getImageProperties(logoBase64);
-             const pdfWidth = 40; 
-             const logoHeight = (imgProps.height * pdfWidth) / imgProps.width;
-             doc.addImage(logoBase64, 'PNG', 14, 10, pdfWidth, logoHeight, undefined, 'FAST'); 
-          } catch(e) { console.error("Logo error", e); }
       } else {
-         // Placeholder text if no logo
-         doc.setFontSize(10);
-         doc.setTextColor(150);
-         doc.text("SIN LOGO", 14, 20);
+          toast.dismiss(toastId);
+          await sendToSunat(fullGuia);
+          return;
       }
-
-      // Company Info (Left side, right of logo)
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...primaryColor);
-      
-      const companyNameLines = doc.splitTextToSize(empresaData.razon_social || 'MI EMPRESA', 75);
-      doc.text(companyNameLines, 60, 18);
-      
-      let yCompany = 18 + (companyNameLines.length * 6);
-      
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(...secondaryColor);
-      
-      const addressLines = doc.splitTextToSize(empresaData.domicilio_fiscal || 'Dirección no registrada', 75);
-      doc.text(addressLines, 60, yCompany);
-      yCompany += (addressLines.length * 4);
-      
-      doc.text(`Email: ${empresaData.email || '-'}`, 60, yCompany);
-      yCompany += 5;
-      doc.text(`Teléfono: ${empresaData.telefono || '-'}`, 60, yCompany);
-      yCompany += 5;
-
-      // RUC Box (Right side)
-      doc.setDrawColor(...primaryColor);
-      doc.setFillColor(255, 255, 255);
-      doc.roundedRect(140, 10, 60, 32, 1, 1, 'FD');
-      
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...primaryColor);
-      doc.text(`R.U.C. ${empresaData.ruc || ''}`, 170, 18, { align: 'center' });
-      
-      doc.setFillColor(...primaryColor);
-      doc.rect(140, 22, 60, 10, 'F');
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(12);
-      doc.text("GUÍA DE REMISIÓN", 170, 28.5, { align: 'center' });
-      
-      doc.setTextColor(...primaryColor);
-      doc.setFontSize(12);
-      doc.text("REMITENTE ELECTRONICA", 170, 37, { align: 'center' });
-      
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(11);
-      doc.text(`${fullGuia.serie} - ${String(fullGuia.numero).padStart(6, '0')}`, 170, 42, { align: 'center' });
-
-      // Determine start Y for next section
-      y = Math.max(yCompany, 55); 
-
-      // --- INFO GENERAL ---
-      doc.setDrawColor(200, 200, 200);
-      doc.line(14, y, 196, y);
-      y += 8;
-      
-      doc.setFontSize(9);
-      
-      // Row 1: Fechas (Full Width)
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...secondaryColor);
-      doc.text("FECHA DE EMISIÓN:", 14, y);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(fullGuia.fecha_emision, 50, y);
-      
-      doc.setTextColor(...secondaryColor);
-      doc.setFont("helvetica", "bold");
-      doc.text("FECHA DE TRASLADO:", 110, y);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(fullGuia.fecha_traslado, 150, y);
-      
-      y += 8;
-      doc.line(14, y, 196, y); // Separator
-      y += 5;
-      
-      // Row 2: Addresses (Side by Side)
-      const startYAddresses = y;
-      const colWidth = 85;
-      
-      // Col 1: Partida
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...secondaryColor);
-      doc.text("PUNTO DE PARTIDA:", 14, y);
-      y += 5;
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      const partidaLines = doc.splitTextToSize(fullGuia.punto_partida, colWidth);
-      doc.text(partidaLines, 14, y);
-      const hPartida = partidaLines.length * 4;
-      
-      // Col 2: Llegada
-      let y2 = startYAddresses;
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...secondaryColor);
-      doc.text("PUNTO DE LLEGADA:", 110, y2);
-      y2 += 5;
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      const llegadaLines = doc.splitTextToSize(fullGuia.punto_llegada, colWidth);
-      doc.text(llegadaLines, 110, y2);
-      const hLlegada = llegadaLines.length * 4;
-      
-      // Advance Y by the tallest address block
-      y = startYAddresses + 5 + Math.max(hPartida, hLlegada) + 5;
-      
-      doc.setDrawColor(200, 200, 200);
-      doc.line(14, y, 196, y);
-      y += 5;
-
-      // --- ACTORES (Destinatario / Transportista) ---
-      const destNameLines = doc.splitTextToSize(fullGuia.destinatario_nombre || '-', 80);
-      const destDocLine = `${fullGuia.destinatario_doc || '-'}`;
-      const destHeight = 15 + (destNameLines.length * 4) + 4; 
-      
-      const transNameLines = doc.splitTextToSize(fullGuia.transportista_nombre || 'Mismo remitente/Privado', 80);
-      let transInfoLines = [];
-      if (fullGuia.transportista_doc) {
-        transInfoLines.push(`${fullGuia.transportista_doc} / ${fullGuia.vehiculo_placa || '-'}`);
-        if (fullGuia.conductor_licencia) transInfoLines.push(`Licencia: ${fullGuia.conductor_licencia}`);
-      } else {
-        transInfoLines.push(`Vehículo: ${fullGuia.vehiculo_placa || '-'}`);
-        transInfoLines.push(`Licencia: ${fullGuia.conductor_licencia || '-'}`);
-      }
-      const transHeight = 15 + (transNameLines.length * 4) + (transInfoLines.length * 4);
-      
-      const boxHeight = Math.max(destHeight, transHeight, 25);
-      
-      // Destinatario Box
-      doc.setFillColor(...lightGray);
-      doc.roundedRect(14, y, 90, boxHeight, 1, 1, 'F');
-      
-      let tempY = y + 6;
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...primaryColor);
-      doc.text("DATOS DEL DESTINATARIO", 18, tempY);
-      
-      tempY += 7;
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(destNameLines, 18, tempY);
-      
-      tempY += (destNameLines.length * 4);
-      doc.setTextColor(...secondaryColor);
-      doc.text(destDocLine, 18, tempY);
-
-      // Transportista Box
-      doc.setFillColor(...lightGray);
-      doc.roundedRect(108, y, 88, boxHeight, 1, 1, 'F');
-      
-      tempY = y + 6;
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(...primaryColor);
-      doc.text("DATOS DEL TRANSPORTISTA", 112, tempY);
-      
-      tempY += 7;
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(transNameLines, 112, tempY);
-      
-      tempY += (transNameLines.length * 4);
-      doc.setTextColor(...secondaryColor);
-      transInfoLines.forEach(line => {
-          doc.text(line, 112, tempY);
-          tempY += 4;
-      });
-
-      y += boxHeight + 10;
-
-      // --- ITEMS TABLE ---
-      const columns = [
-          { header: "CÓDIGO", dataKey: "codigo" },
-          { header: "DESCRIPCIÓN", dataKey: "descripcion" },
-          { header: "U.M.", dataKey: "um" },
-          { header: "CANT.", dataKey: "cantidad" },
-          { header: "PESO (KG)", dataKey: "peso" }
-      ];
-      
-      const rows = fullGuia.detalles ? fullGuia.detalles.map(item => ({
-        codigo: item.codigo_producto,
-        descripcion: item.descripcion,
-        um: item.unidad_medida,
-        cantidad: item.cantidad,
-        peso: item.peso
-      })) : [];
-
-      autoTable(doc, {
-        startY: y,
-        columns: columns,
-        body: rows,
-        theme: 'plain',
-        headStyles: { 
-            fillColor: primaryColor, 
-            textColor: 255, 
-            fontStyle: 'bold',
-            halign: 'center' 
-        },
-        styles: { 
-            fontSize: 9,
-            cellPadding: 3,
-            lineColor: [226, 232, 240],
-            lineWidth: 0.1
-        },
-        columnStyles: {
-            codigo: { cellWidth: 25 },
-            descripcion: { cellWidth: 'auto' },
-            um: { cellWidth: 20, halign: 'center' },
-            cantidad: { cellWidth: 20, halign: 'center' },
-            peso: { cellWidth: 25, halign: 'right' }
-        },
-        alternateRowStyles: {
-            fillColor: [248, 250, 252]
-        },
-        margin: { top: 15, bottom: 20 }
-      });
-      
-      y = doc.lastAutoTable.finalY + 10;
-
-      // --- FOOTER INFO ---
-      if (y + 40 > doc.internal.pageSize.height) {
-          doc.addPage();
-          y = 20;
-      }
-
-      // QR needs space on the right (approx 30mm)
-      // Text starts at 70, so max width is approx 160 - 70 = 90
-      const obsLines = doc.splitTextToSize(fullGuia.observaciones || '', 90);
-      
-      // Calculate height based on content + QR minimum height (28mm)
-      const contentHeight = 35 + Math.max(0, (obsLines.length - 1) * 4);
-      const footerHeight = Math.max(contentHeight, 35); // Ensure at least 35 for QR
-
-      doc.setFillColor(...lightGray);
-      doc.roundedRect(14, y, 182, footerHeight, 1, 1, 'F');
-      
-      doc.setFontSize(9);
-      doc.setTextColor(...secondaryColor);
-      
-      let fy = y + 6;
-      doc.setFont("helvetica", "bold");
-      doc.text("MOTIVO DE TRASLADO:", 18, fy);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(fullGuia.motivo_traslado, 70, fy);
-      
-      fy += 6;
-      doc.setTextColor(...secondaryColor);
-      doc.setFont("helvetica", "bold");
-      doc.text("PESO BRUTO TOTAL:", 18, fy);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(`${fullGuia.peso_bruto_total} KG`, 70, fy);
-      
-      fy += 6;
-      doc.setTextColor(...secondaryColor);
-      doc.setFont("helvetica", "bold");
-      doc.text("NÚMERO DE BULTOS:", 18, fy);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(0, 0, 0);
-      doc.text(`${fullGuia.numero_bultos}`, 70, fy);
-      
-      if (fullGuia.observaciones) {
-          fy += 6;
-          doc.setTextColor(...secondaryColor);
-          doc.setFont("helvetica", "bold");
-          doc.text("OBSERVACIONES:", 18, fy);
-          doc.setFont("helvetica", "normal");
-          doc.setTextColor(0, 0, 0);
-          doc.text(obsLines, 70, fy);
-      }
-
-      // QR Code in Footer (Right side)
-      if (qrBase64) {
-          doc.addImage(qrBase64, 'PNG', 160, y + 3, 28, 28);
-          doc.setFontSize(7);
-          doc.setTextColor(100);
-          doc.text("Escanear para validar", 174, y + 34, { align: "center" });
-      }
-
-      // Footer legal text
-      const pageHeight = doc.internal.pageSize.height;
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text("Representación impresa de la Guía de Remisión Electrónica generada desde el sistema.", 105, pageHeight - 10, { align: "center" });
-
-      if (mode === 'view') {
-        window.open(doc.output('bloburl'), '_blank');
-      } else {
-        doc.save(`GUIA-${fullGuia.serie}-${fullGuia.numero}.pdf`);
-      }
-      toast.success(mode === 'view' ? "PDF abierto" : "PDF descargado");
     } catch (error) {
       console.error(error);
-      toast.error("Error al generar PDF");
+      toast.error("Error al procesar PDF oficial");
     } finally {
       toast.dismiss(toastId);
     }
@@ -815,16 +467,18 @@ const GuiasRemision = () => {
           <Truck size={24} className="text-blue-600" />
           Guías de Remisión
         </h2>
-        <button 
-          onClick={() => {
-            setEditingId(null);
-            setFormData(initialFormState);
-            setView('create');
-          }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
-        >
-          <Plus size={20} /> Nueva Guía
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              setEditingId(null);
+              setFormData(initialFormState);
+              setView('create');
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700"
+          >
+            <Plus size={20} /> Nueva Guía
+          </button>
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-lg shadow-sm flex gap-4">
@@ -894,7 +548,7 @@ const GuiasRemision = () => {
                         <Eye size={18} />
                       </a>
                     ) : (
-                      <button onClick={() => handlePrintLocal(guia, 'view')} className="text-blue-600 hover:text-blue-800" title="Ver PDF Preliminar">
+                      <button onClick={() => handlePrintLocal(guia)} className="text-blue-600 hover:text-blue-800" title="Enviar a SUNAT y ver PDF">
                         <Eye size={18} />
                       </button>
                     )}
@@ -904,7 +558,7 @@ const GuiasRemision = () => {
                           <Printer size={18} />
                        </a>
                     ) : (
-                       <button onClick={() => handlePrintLocal(guia, 'download')} className="text-gray-500 hover:text-gray-800" title="Descargar PDF Local">
+                       <button onClick={() => handlePrintLocal(guia)} className="text-gray-500 hover:text-gray-800" title="Enviar a SUNAT y obtener PDF">
                           <Printer size={18} />
                        </button>
                     )}

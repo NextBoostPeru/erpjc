@@ -80,7 +80,7 @@ try {
     
     $checkCol = $conn->query("SHOW COLUMNS FROM colaboradores LIKE 'sueldo_base'");
     if ($checkCol->rowCount() == 0) {
-        $conn->exec("ALTER TABLE colaboradores ADD COLUMN sueldo_base DECIMAL(10,2) DEFAULT 1025.00");
+        $conn->exec("ALTER TABLE colaboradores ADD COLUMN sueldo_base DECIMAL(10,2) DEFAULT 1130.00");
         echo "Columna sueldo_base agregada a colaboradores.<br>";
     }
 
@@ -94,6 +94,12 @@ try {
     if ($checkCol3->rowCount() == 0) {
         $conn->exec("ALTER TABLE colaboradores ADD COLUMN comision_afp ENUM('Flujo', 'Mixta') DEFAULT 'Flujo'");
         echo "Columna comision_afp agregada a colaboradores.<br>";
+    }
+
+    $checkCol4 = $conn->query("SHOW COLUMNS FROM planilla_detalles LIKE 'monto_dominicales'");
+    if ($checkCol4->rowCount() == 0) {
+        $conn->exec("ALTER TABLE planilla_detalles ADD COLUMN monto_dominicales DECIMAL(10, 2) DEFAULT 0");
+        echo "Columna monto_dominicales agregada a planilla_detalles.<br>";
     }
 
 
