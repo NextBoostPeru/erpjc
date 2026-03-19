@@ -11,10 +11,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
-if (!$jwt->validateToken($token)) {
+$userData = $jwt->validateToken($token);
+if (!$userData) {
     http_response_code(401);
     echo json_encode(['error' => 'Token inválido']);
     exit;
@@ -23,6 +25,8 @@ if (!$jwt->validateToken($token)) {
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    rbac_require($conn, $userData, 'turnos', $method);
+
     if ($method === 'GET') {
         $stmt = $conn->query("SELECT * FROM turnos ORDER BY id");
         echo json_encode(["data" => $stmt->fetchAll(PDO::FETCH_ASSOC)]);

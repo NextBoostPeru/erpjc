@@ -3,6 +3,7 @@ import axios from 'axios';
 import { API_URL } from '../api/config';
 import { FileText, Plus, Search, Trash2, Printer, CheckCircle, XCircle, ArrowRight, Upload, Paperclip, Download, Edit, Copy, Mail, Save, Book, MessageCircle, Percent, DollarSign, Send, ShieldCheck } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import SearchableSelect from './SearchableSelect';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -35,6 +36,8 @@ const Cotizaciones = () => {
     const [rejectReason, setRejectReason] = useState('');
     const [rejectId, setRejectId] = useState(null);
 
+    const navigate = useNavigate();
+
     const handleWhatsApp = async (cotInput = null) => {
         // Support both direct event call (where argument is event object) and direct cot object passing
         let cot = (cotInput && cotInput.id) ? cotInput : selectedCotizacion;
@@ -49,7 +52,7 @@ const Cotizaciones = () => {
                      cot = res.data;
                 } catch (fetchError) {
                     console.error("Error fetching full details for WhatsApp:", fetchError);
-                    throw new Error("No se pudieron cargar los detalles de la cotización");
+                    throw new Error("No se pudieron cargar los detalles de la cotización", { cause: fetchError });
                 }
             }
 
@@ -321,10 +324,25 @@ const Cotizaciones = () => {
         fetchEmpresaData();
         fetchBancos();
         fetchApproversInit();
+        const checkCanConfigureApprovers = async () => {
+            try {
+                if (!token) {
+                    setCanConfigureApprovers(false);
+                    return;
+                }
+                const res = await axios.get(`${API_URL}check_my_permissions.php?code=cotizaciones`, { headers });
+                const data = res.data || {};
+                setCanConfigureApprovers(data.editar === 1 || data.escritura === 1);
+            } catch (e) {
+                setCanConfigureApprovers(false);
+            }
+        };
+        checkCanConfigureApprovers();
     }, []);
 
     const [isSearching, setIsSearching] = useState(false);
     const [clientesLoaded, setClientesLoaded] = useState(false);
+    const [canConfigureApprovers, setCanConfigureApprovers] = useState(false);
     const [approverModalOpen, setApproverModalOpen] = useState(false);
     const [approvers, setApprovers] = useState([]);
     const [users, setUsers] = useState([]);
@@ -872,11 +890,8 @@ const Cotizaciones = () => {
             toast.success(data.message || "Cotización convertida exitosamente", { id: toastId });
             setShowModal(false);
             fetchCotizaciones();
-            
-            // Descargar PDF automáticamente si hay ID
             if (data.comprobante_id) {
-                // Abrir en nueva pestaña
-                window.open(`${API_URL}facturacion.php?action=proxy_pdf&id=${data.comprobante_id}`, '_blank');
+                navigate(`/facturacion-electronica?edit=${data.comprobante_id}`);
             }
         } catch (error) {
             console.error("Error convirtiendo a venta:", error);
@@ -923,7 +938,7 @@ const Cotizaciones = () => {
         const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         const asesorNombre = cot.asesor_nombre || cot.vendedor || currentUser?.nombre_real || currentUser?.usuario || '';
         
-        let emp = null;
+        let emp;
         let acredLogos = [];
         const toastId = toast.loading("Obteniendo datos...");
         
@@ -959,7 +974,6 @@ const Cotizaciones = () => {
         
         let yPos = 20;
         const xPos = 14;
-        let logoHeight = 0;
 
         if (logoPath) {
             try {
@@ -968,7 +982,7 @@ const Cotizaciones = () => {
                 
                 const imgProps = doc.getImageProperties(logoBase64);
                 const pdfWidth = 40; 
-                logoHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                const logoHeight = (imgProps.height * pdfWidth) / imgProps.width;
                 
                 doc.addImage(logoBase64, 'PNG', 14, 10, pdfWidth, logoHeight, undefined, 'FAST');
                 yPos = Math.max(yPos, 10 + logoHeight + 5);
@@ -1455,13 +1469,15 @@ const Cotizaciones = () => {
                             <Plus size={18} /> Nueva Cotización
                         </button>
                     )}
-                    <button 
-                        onClick={() => { setApproverModalOpen(true); fetchApproversInit(); }}
-                        className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50"
-                        title="Configurar Aprobadores"
-                    >
-                        <ShieldCheck size={18} /> Aprobadores
-                    </button>
+                    {canConfigureApprovers && (
+                        <button 
+                            onClick={() => { setApproverModalOpen(true); fetchApproversInit(); }}
+                            className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50"
+                            title="Configurar Aprobadores"
+                        >
+                            <ShieldCheck size={18} /> Aprobadores
+                        </button>
+                    )}
                 </div>
                 {activeTab === 'nueva' && (
                     <button 
@@ -1553,6 +1569,15 @@ const Cotizaciones = () => {
                                                     title="Editar"
                                                 >
                                                     <Edit size={18} />
+                                                </button>
+                                            )}
+                                            {cot.estado === 'Aprobada' && (
+                                                <button 
+                                                    onClick={() => handleConvert(cot.id)}
+                                                    className="text-purple-600 hover:text-purple-800 font-medium"
+                                                    title="Convertir a Venta"
+                                                >
+                                                    <ArrowRight size={18} />
                                                 </button>
                                             )}
                                             <button 
@@ -2255,9 +2280,7 @@ const Cotizaciones = () => {
                                 <>
                                     {(() => {
                                         const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-                                        const rol = (currentUser?.rol_nombre || '').toLowerCase();
-                                        const isGerencia = rol.includes('gerente') || rol.includes('gerencia');
-                                        const canApprove = isGerencia || approvers.some(a => a.usuario_id === currentUser?.id);
+                                        const canApprove = approvers.some(a => a.usuario_id === currentUser?.id);
                                         if (!canApprove) return null;
                                         return (
                                             <>

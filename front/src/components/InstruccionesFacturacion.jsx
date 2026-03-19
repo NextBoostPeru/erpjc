@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle, AlertCircle, HelpCircle, BookOpen, Download, Search } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, HelpCircle, BookOpen, Download, Search, Wallet, Landmark, ArrowRight } from 'lucide-react';
 
 const InstruccionesFacturacion = () => {
     const [activeTab, setActiveTab] = useState('facturacion');

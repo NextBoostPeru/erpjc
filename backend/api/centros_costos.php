@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 // Helper function to get headers
 function getAuthorizationHeader(){
@@ -53,7 +54,16 @@ try {
     }
 
     $userId = $userData->id;
-    $rolId = $userData->rol_id;
+    
+    // Fix: Validar rol_id
+    $rolId = $userData->rol_id ?? 0;
+    
+    // Si rol_id viene 0 o nulo, intentar recuperarlo de BD
+    if (empty($rolId)) {
+        $stmtUser = $conn->prepare("SELECT rol_id FROM usuarios WHERE id = ?");
+        $stmtUser->execute([$userId]);
+        $rolId = $stmtUser->fetchColumn();
+    }
 } catch (Exception $e) {
     error_log("Auth Error: " . $e->getMessage());
     http_response_code(401);
@@ -62,36 +72,15 @@ try {
     exit;
 }
 
-function checkPermission($conn, $rolId, $moduleCode, $type) {
-    // Super Admin & Gerente Bypass (Role ID 1 or 7)
-    if ($rolId == 1 || $rolId == 7) return true;
-    
-    // Get Module ID
-    $stmt = $conn->prepare("SELECT id FROM modulos WHERE codigo = ?");
-    $stmt->execute([$moduleCode]);
-    $moduleId = $stmt->fetchColumn();
-    
-    if (!$moduleId) return false;
-    
-    // Check permission
-    $col = "permiso_" . $type; // lectura, escritura, eliminacion
-    $stmt = $conn->prepare("SELECT $col FROM roles_modulos WHERE rol_id = ? AND modulo_id = ?");
-    $stmt->execute([$rolId, $moduleId]);
-    $perm = $stmt->fetchColumn();
-    return (bool)$perm;
-}
-
 $method = $_SERVER['REQUEST_METHOD'];
 $moduleCode = 'centros_costos';
 $action = $_GET['action'] ?? '';
 
 try {
+    rbac_require($conn, $userData, $moduleCode, $method);
+
     switch ($method) {
         case 'GET':
-            if (!checkPermission($conn, $rolId, $moduleCode, 'lectura')) {
-                http_response_code(403);
-                throw new Exception("Sin permiso de lectura (Rol ID: $rolId)");
-            }
             if ($action === 'servicio') {
                 handleGetServicios($conn);
             } else {
@@ -99,10 +88,6 @@ try {
             }
             break;
         case 'POST':
-            if (!checkPermission($conn, $rolId, $moduleCode, 'escritura')) {
-                http_response_code(403);
-                throw new Exception("Sin permiso de escritura (Rol ID: $rolId)");
-            }
             if ($action === 'servicio') {
                 handleCreateServicio($conn);
             } else {
@@ -110,10 +95,6 @@ try {
             }
             break;
         case 'PUT':
-            if (!checkPermission($conn, $rolId, $moduleCode, 'escritura')) {
-                http_response_code(403);
-                throw new Exception("Sin permiso de escritura (Rol ID: $rolId)");
-            }
             if ($action === 'servicio') {
                 handleUpdateServicio($conn);
             } else {
@@ -121,10 +102,6 @@ try {
             }
             break;
         case 'DELETE':
-            if (!checkPermission($conn, $rolId, $moduleCode, 'eliminacion')) {
-                http_response_code(403);
-                throw new Exception("Sin permiso de eliminacion (Rol ID: $rolId)");
-            }
             if ($action === 'servicio') {
                 handleDeleteServicio($conn);
             } else {

@@ -30,6 +30,117 @@ if (!$user) {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+function rbac_column_exists(PDO $conn, string $table, string $column): bool {
+    $stmt = $conn->prepare("
+        SELECT 1
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :t
+          AND COLUMN_NAME = :c
+        LIMIT 1
+    ");
+    $stmt->execute([':t' => $table, ':c' => $column]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function rbac_ensure_roles_modulos_schema(PDO $conn): void {
+    try {
+        if (!rbac_column_exists($conn, 'roles_modulos', 'permiso_crear')) {
+            $conn->exec("ALTER TABLE roles_modulos ADD COLUMN permiso_crear TINYINT(1) NOT NULL DEFAULT 0");
+            try { $conn->exec("UPDATE roles_modulos SET permiso_crear = COALESCE(permiso_escritura, 0)"); } catch (Throwable $e) {}
+        }
+        if (!rbac_column_exists($conn, 'roles_modulos', 'permiso_editar')) {
+            $conn->exec("ALTER TABLE roles_modulos ADD COLUMN permiso_editar TINYINT(1) NOT NULL DEFAULT 0");
+            try { $conn->exec("UPDATE roles_modulos SET permiso_editar = COALESCE(permiso_escritura, 0)"); } catch (Throwable $e) {}
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function rbac_get_user_role(PDO $conn, $user): array {
+    $u = (array)$user;
+    $userId = isset($u['id']) ? (int)$u['id'] : (int)($u['id'] ?? 0);
+    $rolId = (int)($u['rol_id'] ?? 0);
+    $rolNombre = '';
+
+    if ($userId) {
+        try {
+            $stmt = $conn->prepare("SELECT u.rol_id, r.nombre as rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = ? LIMIT 1");
+            $stmt->execute([$userId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $rolId = (int)($row['rol_id'] ?? 0);
+                $rolNombre = strtolower((string)($row['rol_nombre'] ?? ''));
+            }
+        } catch (Throwable $e) {
+        }
+    }
+
+    if (!$rolNombre) {
+        $rolNombre = strtolower((string)($u['rol'] ?? ($u['rol_nombre'] ?? '')));
+    }
+
+    return [$rolId, $rolNombre];
+}
+
+function rbac_is_admin_or_manager(int $rolId, string $rolNombre): bool {
+    if ($rolId === 1 || $rolId === 7) return true;
+    return $rolNombre !== '' && (str_contains($rolNombre, 'admin') || str_contains($rolNombre, 'administrador') || str_contains($rolNombre, 'gerente') || str_contains($rolNombre, 'gerencia'));
+}
+
+function rbac_can(PDO $conn, int $rolId, string $rolNombre, string $moduleCode, string $perm): bool {
+    if (rbac_is_admin_or_manager($rolId, $rolNombre)) return true;
+
+    $stmt = $conn->prepare("SELECT id FROM modulos WHERE codigo = ? LIMIT 1");
+    $stmt->execute([$moduleCode]);
+    $moduleId = (int)($stmt->fetchColumn() ?: 0);
+    if (!$moduleId) return false;
+
+    if ($perm === 'escritura') {
+        try {
+            $stmt = $conn->prepare("SELECT COALESCE(permiso_crear,0) as c, COALESCE(permiso_editar,0) as e, COALESCE(permiso_escritura,0) as w FROM roles_modulos WHERE rol_id = ? AND modulo_id = ? LIMIT 1");
+            $stmt->execute([$rolId, $moduleId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) return false;
+            return ((int)$row['c'] === 1) || ((int)$row['e'] === 1) || ((int)$row['w'] === 1);
+        } catch (Throwable $e) {
+            $stmt = $conn->prepare("SELECT COALESCE(permiso_escritura,0) FROM roles_modulos WHERE rol_id = ? AND modulo_id = ? LIMIT 1");
+            $stmt->execute([$rolId, $moduleId]);
+            return (int)($stmt->fetchColumn() ?: 0) === 1;
+        }
+    }
+
+    $col = "permiso_" . $perm;
+    try {
+        $stmt = $conn->prepare("SELECT COALESCE($col,0) FROM roles_modulos WHERE rol_id = ? AND modulo_id = ? LIMIT 1");
+        $stmt->execute([$rolId, $moduleId]);
+        return (int)($stmt->fetchColumn() ?: 0) === 1;
+    } catch (Throwable $e) {
+        if ($perm === 'crear' || $perm === 'editar') {
+            $stmt = $conn->prepare("SELECT COALESCE(permiso_escritura,0) FROM roles_modulos WHERE rol_id = ? AND modulo_id = ? LIMIT 1");
+            $stmt->execute([$rolId, $moduleId]);
+            return (int)($stmt->fetchColumn() ?: 0) === 1;
+        }
+        return false;
+    }
+}
+
+rbac_ensure_roles_modulos_schema($conn);
+[$rolId, $rolNombre] = rbac_get_user_role($conn, $user);
+$required = match ($method) {
+    'GET' => 'lectura',
+    'POST' => 'crear',
+    'PUT' => 'editar',
+    'DELETE' => 'eliminacion',
+    default => 'lectura'
+};
+if (!rbac_can($conn, $rolId, $rolNombre, 'permisos', $required)) {
+    http_response_code(403);
+    echo json_encode(["message" => "Sin permisos para gestionar roles"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
 try {
     switch ($method) {
         case 'GET':

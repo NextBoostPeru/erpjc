@@ -17,6 +17,11 @@ const GestionPlanillas = () => {
   const [details, setDetails] = useState([]);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
   
   // Generation Params
   const [generateParams, setGenerateParams] = useState({
@@ -52,7 +57,6 @@ const GestionPlanillas = () => {
         comision = comisionType === 'Flujo' ? 0.0147 : 0.0023;
         break;
       default:
-        comision = 0.01;
         break;
     }
     return { aporte, seguro, comision };
@@ -96,7 +100,7 @@ const GestionPlanillas = () => {
 
   const fetchPlanillas = async () => {
     try {
-      const response = await axios.get(`${API_URL}planillas.php`);
+      const response = await axios.get(`${API_URL}planillas.php`, { headers: getAuthHeaders() });
       setPlanillas(Array.isArray(response.data.data) ? response.data.data : []);
     } catch (error) {
       toast.error('Error al cargar planillas');
@@ -108,7 +112,7 @@ const GestionPlanillas = () => {
   const handleGenerate = async () => {
     try {
       setLoading(true);
-      await axios.post(`${API_URL}planillas.php?action=generate`, generateParams);
+      await axios.post(`${API_URL}planillas.php?action=generate`, generateParams, { headers: getAuthHeaders() });
       toast.success('Planilla generada correctamente');
       setShowGenerateModal(false);
       fetchPlanillas();
@@ -122,7 +126,7 @@ const GestionPlanillas = () => {
   const viewDetails = async (planilla) => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}planillas.php?id=${planilla.id}`);
+      const response = await axios.get(`${API_URL}planillas.php?id=${planilla.id}`, { headers: getAuthHeaders() });
       setSelectedPlanilla(response.data.header);
       setDetails(Array.isArray(response.data.details) ? response.data.details : []);
       setShowDetailModal(true);
@@ -135,14 +139,14 @@ const GestionPlanillas = () => {
 
   const updateDetail = async (detail) => {
     try {
-      await axios.post(`${API_URL}planillas.php`, detail);
+      await axios.post(`${API_URL}planillas.php`, detail, { headers: getAuthHeaders() });
       toast.success('Detalle actualizado');
       // Update local state optimistically
       const newDetails = details.map(d => d.id === detail.id ? detail : d);
       setDetails(newDetails);
       
       // Refresh full data to get recalculated totals from backend
-      const response = await axios.get(`${API_URL}planillas.php?id=${selectedPlanilla.id}`);
+      const response = await axios.get(`${API_URL}planillas.php?id=${selectedPlanilla.id}`, { headers: getAuthHeaders() });
       setSelectedPlanilla(response.data.header);
       setDetails(Array.isArray(response.data.details) ? response.data.details : []);
 
@@ -156,7 +160,7 @@ const GestionPlanillas = () => {
       await axios.put(`${API_URL}planillas.php`, {
         id: selectedPlanilla.id,
         estado: status
-      });
+      }, { headers: getAuthHeaders() });
       toast.success(`Planilla ${status}`);
       setSelectedPlanilla({...selectedPlanilla, estado: status});
       fetchPlanillas();
@@ -172,7 +176,7 @@ const GestionPlanillas = () => {
 
     try {
       setLoading(true);
-      await axios.delete(`${API_URL}planillas.php?id=${id}`);
+      await axios.delete(`${API_URL}planillas.php?id=${id}`, { headers: getAuthHeaders() });
       toast.success('Planilla eliminada correctamente');
       fetchPlanillas();
     } catch (error) {
@@ -267,10 +271,10 @@ const GestionPlanillas = () => {
   const recalculatePlanilla = async () => {
     try {
       setLoading(true);
-      await axios.post(`${API_URL}planillas.php?action=recalculate`, { id: selectedPlanilla.id });
+      await axios.post(`${API_URL}planillas.php?action=recalculate`, { id: selectedPlanilla.id }, { headers: getAuthHeaders() });
       toast.success('Planilla recalculada');
       // Refrescar detalles y encabezado
-      const response = await axios.get(`${API_URL}planillas.php?id=${selectedPlanilla.id}`);
+      const response = await axios.get(`${API_URL}planillas.php?id=${selectedPlanilla.id}`, { headers: getAuthHeaders() });
       setSelectedPlanilla(response.data.header);
       setDetails(Array.isArray(response.data.details) ? response.data.details : []);
       // Refrescar lista para totales
@@ -584,10 +588,10 @@ const GestionPlanillas = () => {
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">H.E (Monto)</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Bonos</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Comisiones</th>
-                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Essalud (Aporte)</th>
-                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Vida Ley (Aporte)</th>
-                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">SCTR (Aporte)</th>
                       <th className="px-4 py-3 text-right font-bold text-gray-700 uppercase tracking-wider bg-gray-100">Total Bruto</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Essalud (Empleador)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Vida Ley (Empleador)</th>
+                      <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">SCTR (Empleador)</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">AFP/ONP</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">5ta Cat.</th>
                       <th className="px-4 py-3 text-right font-semibold text-gray-500 uppercase tracking-wider">Tardanzas</th>
@@ -637,12 +641,10 @@ const GestionPlanillas = () => {
                           </>
                         )}
 
-                        {/* Aportes del empleador (siempre visibles) */}
+                        <td className="px-4 py-3 text-right font-bold bg-gray-50 text-gray-800">{parseFloat(d.total_bruto).toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.essalud_aporte || 0).toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.vida_ley_aporte || 0).toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-gray-600">{parseFloat(d.sctr_aporte || 0).toFixed(2)}</td>
-
-                        <td className="px-4 py-3 text-right font-bold bg-gray-50 text-gray-800">{parseFloat(d.total_bruto).toFixed(2)}</td>
                         <td className="px-4 py-3 text-right text-gray-600">
                           {(d.afp_detalle || calcAfpDetalle(d)) ? (
                             <div className="text-xs text-gray-700 text-right">
@@ -715,10 +717,10 @@ const GestionPlanillas = () => {
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.monto_horas_extras), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.bonos), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.comisiones), 0).toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right text-gray-800">{parseFloat(selectedPlanilla.total_ingresos).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.essalud_aporte || 0), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.vida_ley_aporte || 0), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.sctr_aporte || 0), 0).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-right text-gray-800">{parseFloat(selectedPlanilla.total_ingresos).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right">{details.reduce((acc, d) => acc + parseFloat(d.afp_onp_monto), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right text-red-600">{details.reduce((acc, d) => acc + parseFloat(d.quinta_categoria_monto || 0), 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-right text-red-600">{details.reduce((acc, d) => acc + parseFloat(d.tardanzas_monto), 0).toFixed(2)}</td>

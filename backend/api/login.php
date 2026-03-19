@@ -23,6 +23,33 @@ function handle_fatal_error() {
 }
 register_shutdown_function('handle_fatal_error');
 
+function rbac_column_exists(PDO $conn, string $table, string $column): bool {
+    $stmt = $conn->prepare("
+        SELECT 1
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :t
+          AND COLUMN_NAME = :c
+        LIMIT 1
+    ");
+    $stmt->execute([':t' => $table, ':c' => $column]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function rbac_ensure_roles_modulos_schema(PDO $conn): void {
+    try {
+        if (!rbac_column_exists($conn, 'roles_modulos', 'permiso_crear')) {
+            $conn->exec("ALTER TABLE roles_modulos ADD COLUMN permiso_crear TINYINT(1) NOT NULL DEFAULT 0");
+            try { $conn->exec("UPDATE roles_modulos SET permiso_crear = COALESCE(permiso_escritura, 0)"); } catch (Throwable $e) {}
+        }
+        if (!rbac_column_exists($conn, 'roles_modulos', 'permiso_editar')) {
+            $conn->exec("ALTER TABLE roles_modulos ADD COLUMN permiso_editar TINYINT(1) NOT NULL DEFAULT 0");
+            try { $conn->exec("UPDATE roles_modulos SET permiso_editar = COALESCE(permiso_escritura, 0)"); } catch (Throwable $e) {}
+        }
+    } catch (Throwable $e) {
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     if (isset($conn)) $conn = null;
@@ -88,9 +115,10 @@ try {
 
                 $modulos = [];
                 if (!empty($row['rol_id'])) {
+                    rbac_ensure_roles_modulos_schema($conn);
                     $permisos_query = "
                         SELECT m.codigo, m.nombre, m.ruta, m.icono, 
-                               rm.permiso_lectura, rm.permiso_escritura, rm.permiso_eliminacion
+                               rm.permiso_lectura, rm.permiso_crear, rm.permiso_editar, rm.permiso_escritura, rm.permiso_eliminacion
                         FROM roles_modulos rm
                         JOIN modulos m ON rm.modulo_id = m.id
                         WHERE rm.rol_id = :rol_id AND rm.permiso_lectura = 1
@@ -101,9 +129,10 @@ try {
                     $modulos = $permisos_stmt->fetchAll(PDO::FETCH_ASSOC);
                 }
                 if (empty($modulos) && !empty($row['rol_nombre'])) {
+                    rbac_ensure_roles_modulos_schema($conn);
                     $fallback_query = "
                         SELECT m.codigo, m.nombre, m.ruta, m.icono,
-                               rm.permiso_lectura, rm.permiso_escritura, rm.permiso_eliminacion
+                               rm.permiso_lectura, rm.permiso_crear, rm.permiso_editar, rm.permiso_escritura, rm.permiso_eliminacion
                         FROM roles_modulos rm
                         JOIN modulos m ON rm.modulo_id = m.id
                         JOIN roles r ON rm.rol_id = r.id

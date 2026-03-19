@@ -14,6 +14,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
 
+function rbac_column_exists(PDO $conn, string $table, string $column): bool {
+    $stmt = $conn->prepare("
+        SELECT 1
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :t
+          AND COLUMN_NAME = :c
+        LIMIT 1
+    ");
+    $stmt->execute([':t' => $table, ':c' => $column]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function rbac_ensure_roles_modulos_schema(PDO $conn): void {
+    try {
+        if (!rbac_column_exists($conn, 'roles_modulos', 'permiso_crear')) {
+            $conn->exec("ALTER TABLE roles_modulos ADD COLUMN permiso_crear TINYINT(1) NOT NULL DEFAULT 0");
+            try { $conn->exec("UPDATE roles_modulos SET permiso_crear = COALESCE(permiso_escritura, 0)"); } catch (Throwable $e) {}
+        }
+        if (!rbac_column_exists($conn, 'roles_modulos', 'permiso_editar')) {
+            $conn->exec("ALTER TABLE roles_modulos ADD COLUMN permiso_editar TINYINT(1) NOT NULL DEFAULT 0");
+            try { $conn->exec("UPDATE roles_modulos SET permiso_editar = COALESCE(permiso_escritura, 0)"); } catch (Throwable $e) {}
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+rbac_ensure_roles_modulos_schema($conn);
+
 // Validar JWT (acepta Authorization o token por query string)
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -31,22 +60,34 @@ if (!$userData) {
 
 // Convertir a array si es objeto
 $userData = (array) $userData;
-$rol_id = isset($userData['rol_id']) ? (int)$userData['rol_id'] : null;
-$rol_nombre = isset($userData['rol_nombre']) ? strtolower((string)$userData['rol_nombre']) : '';
+$userId = isset($userData['id']) ? (int)$userData['id'] : 0;
 
-// Si el token no trae rol_nombre, lo buscamos en BD
-if (!$rol_nombre && $rol_id) {
+// Obtener rol_id y rol_nombre actualizados desde la BD
+$rol_id = null;
+$rol_nombre = '';
+
+if ($userId) {
     try {
-        $stmtRol = $conn->prepare("SELECT nombre FROM roles WHERE id = :id LIMIT 1");
-        $stmtRol->bindParam(':id', $rol_id, PDO::PARAM_INT);
-        $stmtRol->execute();
-        $nombreRol = $stmtRol->fetchColumn();
-        if ($nombreRol) {
-            $rol_nombre = strtolower((string)$nombreRol);
+        $stmtUser = $conn->prepare("SELECT u.rol_id, r.nombre as rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = :id LIMIT 1");
+        $stmtUser->bindParam(':id', $userId, PDO::PARAM_INT);
+        $stmtUser->execute();
+        $userRoleInfo = $stmtUser->fetch(PDO::FETCH_ASSOC);
+        
+        if ($userRoleInfo) {
+            $rol_id = (int)$userRoleInfo['rol_id'];
+            $rol_nombre = strtolower((string)$userRoleInfo['rol_nombre']);
         }
     } catch (Exception $e) {
-        // si falla, continuamos con lo que tengamos
+        // Fallback
     }
+}
+
+// Si falló la BD, intentar usar lo del token (aunque sea incompleto)
+if (!$rol_id && isset($userData['rol_id'])) {
+    $rol_id = (int)$userData['rol_id'];
+}
+if (!$rol_nombre) {
+    $rol_nombre = isset($userData['rol']) ? strtolower((string)$userData['rol']) : (isset($userData['rol_nombre']) ? strtolower((string)$userData['rol_nombre']) : '');
 }
 
 $modulo_code = isset($_GET['code']) ? $_GET['code'] : '';
@@ -67,8 +108,10 @@ if ($modulo_code === 'permisos') {
     if ($isAdminNumeric || $isManagerNumeric || $isAdminByName || $isManagerByName) {
         echo json_encode([
             "lectura" => 1,
-            "escritura" => 1,
-            "eliminacion" => 1
+            "crear" => 1,
+            "editar" => 1,
+            "eliminacion" => 1,
+            "escritura" => 1
         ]);
         if (isset($conn)) $conn = null;
         exit;
@@ -78,11 +121,15 @@ if ($modulo_code === 'permisos') {
 try {
     // Buscar permisos para este rol y modulo
     $query = "
-        SELECT rm.permiso_lectura, rm.permiso_escritura, rm.permiso_eliminacion
+        SELECT 
+            MAX(COALESCE(rm.permiso_lectura, 0)) as permiso_lectura,
+            MAX(COALESCE(rm.permiso_crear, 0)) as permiso_crear,
+            MAX(COALESCE(rm.permiso_editar, 0)) as permiso_editar,
+            MAX(COALESCE(rm.permiso_eliminacion, 0)) as permiso_eliminacion,
+            MAX(COALESCE(rm.permiso_escritura, 0)) as permiso_escritura
         FROM roles_modulos rm
         JOIN modulos m ON rm.modulo_id = m.id
         WHERE rm.rol_id = :rol_id AND m.codigo = :codigo
-        LIMIT 1
     ";
 
     $stmt = $conn->prepare($query);
@@ -92,17 +139,25 @@ try {
 
     if ($stmt->rowCount() > 0) {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $crear = (int)$row['permiso_crear'];
+        $editar = (int)$row['permiso_editar'];
+        $legacyEscritura = (int)$row['permiso_escritura'];
+        $escritura = ($crear === 1 || $editar === 1 || $legacyEscritura === 1) ? 1 : 0;
         echo json_encode([
             "lectura" => (int)$row['permiso_lectura'],
-            "escritura" => (int)$row['permiso_escritura'],
-            "eliminacion" => (int)$row['permiso_eliminacion']
+            "crear" => $crear,
+            "editar" => $editar,
+            "eliminacion" => (int)$row['permiso_eliminacion'],
+            "escritura" => $escritura
         ]);
     } else {
         // Si no hay asignación explícita, asumimos sin permisos o 0
         echo json_encode([
             "lectura" => 0,
-            "escritura" => 0,
-            "eliminacion" => 0
+            "crear" => 0,
+            "editar" => 0,
+            "eliminacion" => 0,
+            "escritura" => 0
         ]);
     }
 

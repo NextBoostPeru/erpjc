@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require '../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -23,6 +24,189 @@ $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
 $userData = $jwt->validateToken($token);
 $usuario_id = $userData ? $userData->id : ($_GET['usuario_id'] ?? 1);
+
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+$method = $_SERVER['REQUEST_METHOD'];
+$relaxedReadActions = [
+    'list_empresas',
+    'list_normas',
+    'list_iso_users',
+    'list_coordinaciones',
+    'list_pending_meetings',
+    'report_builder'
+];
+if (!($method === 'GET' && in_array($action, $relaxedReadActions, true))) {
+    rbac_require($conn, $userData, 'gestion_iso', $method);
+}
+
+function iso_column_exists(PDO $conn, string $table, string $column): bool {
+    static $cache = [];
+    $key = strtolower($table . '.' . $column);
+    if (array_key_exists($key, $cache)) return $cache[$key];
+    try {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?
+        ");
+        $stmt->execute([$table, $column]);
+        $cache[$key] = ((int)$stmt->fetchColumn()) > 0;
+    } catch (Throwable $e) {
+        $cache[$key] = false;
+    }
+    return $cache[$key];
+}
+
+function iso_numeral_key($numeral): ?array {
+    $numeral = trim((string)($numeral ?? ''));
+    if ($numeral === '') return null;
+    $parts = preg_split('/[^0-9A-Za-z]+/', $numeral, -1, PREG_SPLIT_NO_EMPTY);
+    if (!$parts) return null;
+    return array_map(function ($p) {
+        $p = trim((string)$p);
+        if ($p !== '' && ctype_digit($p)) return (int)$p;
+        return mb_strtolower($p);
+    }, $parts);
+}
+
+function iso_compare_numeral_keys(?array $ka, ?array $kb): int {
+    if ($ka === null && $kb === null) return 0;
+    if ($ka === null) return 1;
+    if ($kb === null) return -1;
+    $len = max(count($ka), count($kb));
+    for ($i = 0; $i < $len; $i++) {
+        $a = $ka[$i] ?? null;
+        $b = $kb[$i] ?? null;
+        if ($a === null && $b === null) return 0;
+        if ($a === null) return -1;
+        if ($b === null) return 1;
+        $aIsInt = is_int($a);
+        $bIsInt = is_int($b);
+        if ($aIsInt && $bIsInt) {
+            if ($a < $b) return -1;
+            if ($a > $b) return 1;
+            continue;
+        }
+        if ($aIsInt && !$bIsInt) return -1;
+        if (!$aIsInt && $bIsInt) return 1;
+        $cmp = strcmp((string)$a, (string)$b);
+        if ($cmp !== 0) return $cmp;
+    }
+    return 0;
+}
+
+function iso_place_new_item_by_numeral(PDO $conn, $norma_id, $newItemId, $newNumeral): void {
+    $stmt = $conn->prepare("SELECT id, numeral, orden FROM iso_checklist_items WHERE norma_id = ? ORDER BY orden ASC, id ASC");
+    $stmt->execute([$norma_id]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $maxOrden = 0;
+    foreach ($rows as $r) {
+        $o = (int)($r['orden'] ?? 0);
+        if ($o > $maxOrden) $maxOrden = $o;
+    }
+
+    $newKey = iso_numeral_key($newNumeral);
+    if ($newKey === null) {
+        $conn->prepare("UPDATE iso_checklist_items SET orden = ? WHERE id = ? AND norma_id = ?")
+             ->execute([$maxOrden + 1, $newItemId, $norma_id]);
+        return;
+    }
+
+    $isSorted = true;
+    $prevKey = null;
+    foreach ($rows as $r) {
+        $curKey = iso_numeral_key($r['numeral'] ?? '');
+        if ($prevKey !== null) {
+            if (iso_compare_numeral_keys($prevKey, $curKey) > 0) {
+                $isSorted = false;
+                break;
+            }
+        }
+        $prevKey = $curKey;
+    }
+
+    if (!$isSorted) {
+        $conn->prepare("UPDATE iso_checklist_items SET orden = ? WHERE id = ? AND norma_id = ?")
+             ->execute([$maxOrden + 1, $newItemId, $norma_id]);
+        return;
+    }
+
+    $insertOrden = null;
+    foreach ($rows as $r) {
+        if ((int)$r['id'] === (int)$newItemId) continue;
+        $curKey = iso_numeral_key($r['numeral'] ?? '');
+        if (iso_compare_numeral_keys($newKey, $curKey) < 0) {
+            $insertOrden = (int)($r['orden'] ?? 0);
+            break;
+        }
+    }
+
+    if ($insertOrden === null || $insertOrden <= 0) {
+        $conn->prepare("UPDATE iso_checklist_items SET orden = ? WHERE id = ? AND norma_id = ?")
+             ->execute([$maxOrden + 1, $newItemId, $norma_id]);
+        return;
+    }
+
+    $conn->prepare("UPDATE iso_checklist_items SET orden = orden + 1 WHERE norma_id = ? AND orden >= ? AND id <> ?")
+         ->execute([$norma_id, $insertOrden, $newItemId]);
+    $conn->prepare("UPDATE iso_checklist_items SET orden = ? WHERE id = ? AND norma_id = ?")
+         ->execute([$insertOrden, $newItemId, $norma_id]);
+}
+
+function iso_ensure_coordinaciones_table(PDO $conn): void {
+    $conn->exec("CREATE TABLE IF NOT EXISTS iso_coordinaciones (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        empresa_id INT NOT NULL,
+        usuario_id INT NOT NULL,
+        fecha DATETIME NOT NULL,
+        tipo VARCHAR(50) NOT NULL,
+        detalle TEXT,
+        estado VARCHAR(20) DEFAULT 'Completado',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_empresa (empresa_id),
+        INDEX idx_usuario (usuario_id),
+        INDEX idx_fecha (fecha),
+        FOREIGN KEY (empresa_id) REFERENCES iso_empresas(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+function iso_ensure_certificados_table(PDO $conn): void {
+    $conn->exec("CREATE TABLE IF NOT EXISTS iso_certificados (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        empresa_id INT NOT NULL,
+        norma_id INT NOT NULL,
+        usuario_id INT NOT NULL,
+        fecha_inicio DATE NULL,
+        fecha_mantenimiento DATE NULL,
+        fecha_vencimiento DATE NULL,
+        alerta_dias INT NOT NULL DEFAULT 30,
+        nombre_archivo VARCHAR(255) NULL,
+        ruta_archivo VARCHAR(255) NULL,
+        tipo_archivo VARCHAR(100) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_empresa_norma (empresa_id, norma_id),
+        INDEX idx_empresa (empresa_id),
+        INDEX idx_norma (norma_id),
+        FOREIGN KEY (empresa_id) REFERENCES iso_empresas(id) ON DELETE CASCADE,
+        FOREIGN KEY (norma_id) REFERENCES iso_normas(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
+
+function iso_to_datetime_string($dateOrDatetime): string {
+    $v = trim((string)($dateOrDatetime ?? ''));
+    if ($v === '') return date('Y-m-d H:i:s');
+    if (strlen($v) === 10) return $v . ' 00:00:00';
+    return $v;
+}
 
 try {
     // ==========================================
@@ -49,6 +233,337 @@ try {
             $emp['normas'] = $stmtNormas->fetchAll(PDO::FETCH_ASSOC);
         }
         echo json_encode($empresas);
+    }
+
+    elseif ($action === 'resolve_cliente_for_empresa') {
+        $empresaId = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+        if (!$empresaId) {
+            http_response_code(400);
+            echo json_encode(['message' => 'empresa_id requerido']);
+            exit;
+        }
+
+        $stmtEmp = $conn->prepare("SELECT id, nombre, ruc FROM iso_empresas WHERE id = ? LIMIT 1");
+        $stmtEmp->execute([$empresaId]);
+        $empresa = $stmtEmp->fetch(PDO::FETCH_ASSOC);
+
+        if (!$empresa) {
+            http_response_code(404);
+            echo json_encode(['message' => 'Empresa no encontrada']);
+            exit;
+        }
+
+        $cliente = null;
+
+        $ruc = trim((string)($empresa['ruc'] ?? ''));
+        $nombre = trim((string)($empresa['nombre'] ?? ''));
+
+        if ($ruc !== '') {
+            $stmtCli = $conn->prepare("SELECT id, razon_social, num_doc FROM clientes WHERE num_doc = ? LIMIT 1");
+            $stmtCli->execute([$ruc]);
+            $cliente = $stmtCli->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        if (!$cliente && $nombre !== '') {
+            $stmtCli = $conn->prepare("SELECT id, razon_social, num_doc FROM clientes WHERE razon_social = ? LIMIT 1");
+            $stmtCli->execute([$nombre]);
+            $cliente = $stmtCli->fetch(PDO::FETCH_ASSOC) ?: null;
+        }
+
+        echo json_encode(['empresa' => $empresa, 'cliente' => $cliente]);
+    }
+
+    elseif ($action === 'list_coordinaciones') {
+        iso_ensure_coordinaciones_table($conn);
+        $empresaId = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+        if (!$empresaId) {
+            http_response_code(400);
+            echo json_encode(['message' => 'empresa_id requerido']);
+            exit;
+        }
+        $startDate = $_GET['start_date'] ?? null;
+        $endDate = $_GET['end_date'] ?? null;
+        $sql = "SELECT c.*, u.usuario as usuario_nombre
+                FROM iso_coordinaciones c
+                LEFT JOIN usuarios u ON u.id = c.usuario_id
+                WHERE c.empresa_id = ?";
+        $params = [$empresaId];
+        if ($startDate && $endDate) {
+            $sql .= " AND DATE(c.fecha) BETWEEN ? AND ?";
+            $params[] = $startDate;
+            $params[] = $endDate;
+        }
+        $sql .= " ORDER BY c.fecha DESC LIMIT 5000";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    elseif ($action === 'list_pending_meetings') {
+        iso_ensure_coordinaciones_table($conn);
+        $month = trim((string)($_GET['month'] ?? ''));
+        $empresaId = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = date('Y-m');
+        }
+
+        $startDate = $month . '-01';
+        $endDate = date('Y-m-t', strtotime($startDate));
+
+        $sql = "
+            SELECT 
+                c.*,
+                e.nombre as empresa_nombre,
+                e.ruc as empresa_ruc,
+                u.usuario as usuario_nombre
+            FROM iso_coordinaciones c
+            JOIN iso_empresas e ON e.id = c.empresa_id
+            LEFT JOIN usuarios u ON u.id = c.usuario_id
+            WHERE 
+                c.estado = 'Pendiente'
+                AND (c.tipo IN ('Reunión', 'Reunion', 'Visita'))
+                AND DATE(c.fecha) BETWEEN ? AND ?
+        ";
+        $params = [$startDate, $endDate];
+
+        if ($empresaId) {
+            $sql .= " AND c.empresa_id = ? ";
+            $params[] = $empresaId;
+        }
+
+        $sql .= " ORDER BY c.fecha ASC";
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    elseif ($action === 'create_coordinacion' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        iso_ensure_coordinaciones_table($conn);
+        $data = json_decode(file_get_contents("php://input"), true);
+        $empresaId = isset($data['empresa_id']) ? (int)$data['empresa_id'] : 0;
+        if (!$empresaId) {
+            http_response_code(400);
+            echo json_encode(['message' => 'empresa_id requerido']);
+            exit;
+        }
+        $fecha = iso_to_datetime_string($data['fecha'] ?? null);
+        $tipo = trim((string)($data['tipo'] ?? ''));
+        if ($tipo === '') $tipo = 'Reunión';
+        $detalle = (string)($data['detalle'] ?? '');
+        $estado = trim((string)($data['estado'] ?? 'Completado'));
+        if ($estado === '') $estado = 'Completado';
+        $stmt = $conn->prepare("INSERT INTO iso_coordinaciones (empresa_id, usuario_id, fecha, tipo, detalle, estado) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$empresaId, (int)$usuario_id, $fecha, $tipo, $detalle, $estado]);
+        echo json_encode(['success' => true, 'id' => (int)$conn->lastInsertId()]);
+    }
+
+    elseif ($action === 'update_coordinacion' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        iso_ensure_coordinaciones_table($conn);
+        $data = json_decode(file_get_contents("php://input"), true);
+        $id = isset($data['id']) ? (int)$data['id'] : 0;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(['message' => 'id requerido']);
+            exit;
+        }
+        $fecha = iso_to_datetime_string($data['fecha'] ?? null);
+        $tipo = trim((string)($data['tipo'] ?? ''));
+        if ($tipo === '') $tipo = 'Reunión';
+        $detalle = (string)($data['detalle'] ?? '');
+        $estado = trim((string)($data['estado'] ?? 'Completado'));
+        if ($estado === '') $estado = 'Completado';
+        $stmt = $conn->prepare("UPDATE iso_coordinaciones SET fecha = ?, tipo = ?, detalle = ?, estado = ? WHERE id = ?");
+        $stmt->execute([$fecha, $tipo, $detalle, $estado, $id]);
+        echo json_encode(['success' => true]);
+    }
+
+    elseif ($action === 'delete_coordinacion') {
+        iso_ensure_coordinaciones_table($conn);
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(['message' => 'id requerido']);
+            exit;
+        }
+        $conn->prepare("DELETE FROM iso_coordinaciones WHERE id = ?")->execute([$id]);
+        echo json_encode(['success' => true]);
+    }
+
+    elseif ($action === 'list_certificados') {
+        iso_ensure_certificados_table($conn);
+        $empresaId = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+        $normaId = isset($_GET['norma_id']) ? (int)$_GET['norma_id'] : 0;
+
+        $sql = "
+            SELECT 
+                c.*,
+                e.nombre as empresa_nombre,
+                e.ruc as empresa_ruc,
+                n.codigo as norma_codigo,
+                n.nombre as norma_nombre,
+                u.usuario as usuario_nombre
+            FROM iso_certificados c
+            JOIN iso_empresas e ON e.id = c.empresa_id
+            JOIN iso_normas n ON n.id = c.norma_id
+            LEFT JOIN usuarios u ON u.id = c.usuario_id
+            WHERE 1=1
+        ";
+        $params = [];
+        if ($empresaId) {
+            $sql .= " AND c.empresa_id = ? ";
+            $params[] = $empresaId;
+        }
+        if ($normaId) {
+            $sql .= " AND c.norma_id = ? ";
+            $params[] = $normaId;
+        }
+        $sql .= " ORDER BY e.nombre ASC, n.codigo ASC";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    elseif ($action === 'get_certificado') {
+        iso_ensure_certificados_table($conn);
+        $empresaId = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+        $normaId = isset($_GET['norma_id']) ? (int)$_GET['norma_id'] : 0;
+        if (!$empresaId || !$normaId) {
+            http_response_code(400);
+            echo json_encode(['message' => 'empresa_id y norma_id requeridos']);
+            exit;
+        }
+
+        $stmt = $conn->prepare("SELECT * FROM iso_certificados WHERE empresa_id = ? AND norma_id = ? LIMIT 1");
+        $stmt->execute([$empresaId, $normaId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        echo json_encode($row ?: null);
+    }
+
+    elseif ($action === 'upsert_certificado' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        iso_ensure_certificados_table($conn);
+
+        $contentType = strtolower((string)($_SERVER['CONTENT_TYPE'] ?? ''));
+        $data = null;
+        if (str_contains($contentType, 'application/json')) {
+            $data = json_decode(file_get_contents("php://input"), true);
+        } else {
+            $data = $_POST;
+        }
+
+        $empresaId = isset($data['empresa_id']) ? (int)$data['empresa_id'] : 0;
+        $normaId = isset($data['norma_id']) ? (int)$data['norma_id'] : 0;
+        if (!$empresaId || !$normaId) {
+            http_response_code(400);
+            echo json_encode(['message' => 'empresa_id y norma_id requeridos']);
+            exit;
+        }
+
+        $fechaInicio = isset($data['fecha_inicio']) && trim((string)$data['fecha_inicio']) !== '' ? trim((string)$data['fecha_inicio']) : null;
+        $fechaMantenimiento = isset($data['fecha_mantenimiento']) && trim((string)$data['fecha_mantenimiento']) !== '' ? trim((string)$data['fecha_mantenimiento']) : null;
+        $fechaVencimiento = isset($data['fecha_vencimiento']) && trim((string)$data['fecha_vencimiento']) !== '' ? trim((string)$data['fecha_vencimiento']) : null;
+        $alertaDias = isset($data['alerta_dias']) ? (int)$data['alerta_dias'] : 30;
+        if ($alertaDias <= 0) $alertaDias = 30;
+
+        $stmtPrev = $conn->prepare("SELECT id, ruta_archivo FROM iso_certificados WHERE empresa_id = ? AND norma_id = ? LIMIT 1");
+        $stmtPrev->execute([$empresaId, $normaId]);
+        $prev = $stmtPrev->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        $nombreArchivo = null;
+        $rutaArchivo = null;
+        $tipoArchivo = null;
+
+        if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
+            $file = $_FILES['file'];
+            $fileName = (string)($file['name'] ?? '');
+            $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+            $allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
+            if (!in_array($ext, $allowedExts, true)) {
+                http_response_code(400);
+                echo json_encode(['message' => 'Tipo de archivo no permitido (PDF/JPG/PNG)']);
+                exit;
+            }
+            if ((int)($file['size'] ?? 0) > (15 * 1024 * 1024)) {
+                http_response_code(400);
+                echo json_encode(['message' => 'El archivo excede el límite de 15MB']);
+                exit;
+            }
+
+            $uploadDir = 'uploads/iso_certificados/';
+            if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
+            $safeBase = bin2hex(random_bytes(8));
+            $storedName = 'cert_' . $empresaId . '_' . $normaId . '_' . date('Ymd_His') . '_' . $safeBase . '.' . $ext;
+            $destPath = $uploadDir . $storedName;
+            if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+                throw new Exception('No se pudo guardar el archivo');
+            }
+            $nombreArchivo = $fileName;
+            $rutaArchivo = $destPath;
+            $tipoArchivo = (string)($file['type'] ?? '');
+        }
+
+        $conn->beginTransaction();
+        if ($prev && !empty($prev['id'])) {
+            $set = "usuario_id = ?, fecha_inicio = ?, fecha_mantenimiento = ?, fecha_vencimiento = ?, alerta_dias = ?";
+            $params = [(int)$usuario_id, $fechaInicio, $fechaMantenimiento, $fechaVencimiento, $alertaDias];
+            if ($rutaArchivo !== null) {
+                $set .= ", nombre_archivo = ?, ruta_archivo = ?, tipo_archivo = ?";
+                $params[] = $nombreArchivo;
+                $params[] = $rutaArchivo;
+                $params[] = $tipoArchivo;
+            }
+            $params[] = (int)$prev['id'];
+            $stmt = $conn->prepare("UPDATE iso_certificados SET {$set} WHERE id = ?");
+            $stmt->execute($params);
+            $certId = (int)$prev['id'];
+
+            if ($rutaArchivo !== null && !empty($prev['ruta_archivo']) && $prev['ruta_archivo'] !== $rutaArchivo) {
+                $old = (string)$prev['ruta_archivo'];
+                if ($old !== '' && file_exists($old)) {
+                    @unlink($old);
+                }
+            }
+        } else {
+            $stmt = $conn->prepare("
+                INSERT INTO iso_certificados 
+                    (empresa_id, norma_id, usuario_id, fecha_inicio, fecha_mantenimiento, fecha_vencimiento, alerta_dias, nombre_archivo, ruta_archivo, tipo_archivo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $empresaId,
+                $normaId,
+                (int)$usuario_id,
+                $fechaInicio,
+                $fechaMantenimiento,
+                $fechaVencimiento,
+                $alertaDias,
+                $nombreArchivo,
+                $rutaArchivo,
+                $tipoArchivo
+            ]);
+            $certId = (int)$conn->lastInsertId();
+        }
+        $conn->commit();
+        echo json_encode(['success' => true, 'id' => $certId]);
+    }
+
+    elseif ($action === 'delete_certificado') {
+        iso_ensure_certificados_table($conn);
+        $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(['message' => 'id requerido']);
+            exit;
+        }
+        $stmtPrev = $conn->prepare("SELECT ruta_archivo FROM iso_certificados WHERE id = ? LIMIT 1");
+        $stmtPrev->execute([$id]);
+        $ruta = (string)($stmtPrev->fetchColumn() ?: '');
+        $conn->prepare("DELETE FROM iso_certificados WHERE id = ?")->execute([$id]);
+        if ($ruta !== '' && file_exists($ruta)) {
+            @unlink($ruta);
+        }
+        echo json_encode(['success' => true]);
     }
 
     elseif ($action === 'save_empresa' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -169,9 +684,15 @@ try {
         $stmtUpdate->execute([$empresa_id, $norma_id, $today]);
 
         // Get items for the norm
+        $hasNoEvidCol = iso_column_exists($conn, 'iso_tracking', 'no_requiere_evidencia');
+        $trackingFields = "t.id as tracking_id, t.estado, t.fecha_programada, t.fecha_limite, t.fecha_ejecucion, t.observaciones_internas";
+        if ($hasNoEvidCol) {
+            $trackingFields .= ", t.no_requiere_evidencia";
+        }
+        
         $stmtItems = $conn->prepare("
             SELECT i.*, 
-                t.id as tracking_id, t.estado, t.fecha_programada, t.fecha_limite, t.fecha_ejecucion, t.observaciones_internas
+                {$trackingFields}
             FROM iso_checklist_items i
             LEFT JOIN iso_tracking t ON i.id = t.item_id AND t.empresa_id = ?
             WHERE i.norma_id = ?
@@ -183,17 +704,34 @@ try {
         // Enhance items with docs count/list and subitems
         foreach ($items as &$item) {
             if ($item['tracking_id']) {
+                $hasMesCol = iso_column_exists($conn, 'iso_documentos', 'mes');
                 $stmtDocs = $conn->prepare("SELECT * FROM iso_documentos WHERE tracking_id = ?");
                 $stmtDocs->execute([$item['tracking_id']]);
                 $item['documentos'] = $stmtDocs->fetchAll(PDO::FETCH_ASSOC);
+                if (!$hasMesCol) {
+                    foreach ($item['documentos'] as &$d) {
+                        $d['mes'] = !empty($d['created_at']) ? date('Y-m', strtotime($d['created_at'])) : null;
+                    }
+                    unset($d);
+                }
             } else {
                 $item['documentos'] = [];
             }
 
             // Subitems with status
+            $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+            if (!$hasFechaProgCol) {
+                try {
+                    $conn->exec("ALTER TABLE iso_subitem_evaluaciones ADD COLUMN fecha_programada DATE NULL AFTER anio");
+                    $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+                } catch (Throwable $e) {
+                    $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+                }
+            }
+            $fechaProgSelect = $hasFechaProgCol ? ", e.fecha_programada" : "";
             $stmtSub = $conn->prepare("
                 SELECT s.*, 
-                       e.hallazgos, e.estado as estado_anual,
+                       e.hallazgos, e.estado as estado_anual{$fechaProgSelect},
                        e.ene_p, e.ene_e,
                        e.feb_p, e.feb_e,
                        e.mar_p, e.mar_e,
@@ -232,8 +770,30 @@ try {
         $trackingId = $existing['id'] ?? null;
         $previousState = $existing['estado'] ?? 'Pendiente';
 
-        // Validation: Cannot be 'Ejecutado' without docs
-        if ($data['estado'] === 'Ejecutado') {
+        $noEvidencia = !empty($data['no_requiere_evidencia']);
+        if (
+            !$noEvidencia &&
+            !empty($data['observaciones_internas']) &&
+            strpos($data['observaciones_internas'], '[NO_EVIDENCIA]') !== false
+        ) {
+            $noEvidencia = true;
+        }
+        
+        $nextEstado = $data['estado'] ?? 'Programado';
+        $obs = $data['observaciones_internas'] ?? '';
+        $fecha_programada = $data['fecha_programada'] ?? null;
+        $fecha_limite = $data['fecha_limite'] ?? null;
+        $fecha_ejecucion = $data['fecha_ejecucion'] ?? null;
+        
+        if ($noEvidencia) {
+            $nextEstado = 'No aplica';
+            $fecha_programada = null;
+            $fecha_limite = null;
+            $fecha_ejecucion = null;
+        }
+        
+        // Validation: Cannot be 'Ejecutado' without docs unless marked as no-evidence
+        if ($nextEstado === 'Ejecutado' && !$noEvidencia) {
             $docCount = 0;
             if ($trackingId) {
                 $stmtDocs = $conn->prepare("SELECT COUNT(*) FROM iso_documentos WHERE tracking_id = ?");
@@ -247,24 +807,48 @@ try {
         }
 
         // Upsert Tracking
-        $stmt = $conn->prepare("
-            INSERT INTO iso_tracking (empresa_id, norma_id, item_id, estado, fecha_programada, fecha_limite, fecha_ejecucion, observaciones_internas)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE 
-                estado = VALUES(estado),
-                fecha_programada = VALUES(fecha_programada),
-                fecha_limite = VALUES(fecha_limite),
-                fecha_ejecucion = VALUES(fecha_ejecucion),
-                observaciones_internas = VALUES(observaciones_internas)
-        ");
-        $stmt->execute([
-            $empresa_id, $norma_id, $item_id,
-            $data['estado'],
-            $data['fecha_programada'] ?: null,
-            $data['fecha_limite'] ?: null,
-            $data['fecha_ejecucion'] ?: null,
-            $data['observaciones_internas']
-        ]);
+        $hasNoEvidCol = iso_column_exists($conn, 'iso_tracking', 'no_requiere_evidencia');
+        if ($hasNoEvidCol) {
+            $stmt = $conn->prepare("
+                INSERT INTO iso_tracking (empresa_id, norma_id, item_id, estado, fecha_programada, fecha_limite, fecha_ejecucion, observaciones_internas, no_requiere_evidencia)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                    estado = VALUES(estado),
+                    fecha_programada = VALUES(fecha_programada),
+                    fecha_limite = VALUES(fecha_limite),
+                    fecha_ejecucion = VALUES(fecha_ejecucion),
+                    observaciones_internas = VALUES(observaciones_internas),
+                    no_requiere_evidencia = VALUES(no_requiere_evidencia)
+            ");
+            $stmt->execute([
+                $empresa_id, $norma_id, $item_id,
+                $nextEstado,
+                $fecha_programada ?: null,
+                $fecha_limite ?: null,
+                $fecha_ejecucion ?: null,
+                $obs,
+                $noEvidencia ? 1 : 0
+            ]);
+        } else {
+            $stmt = $conn->prepare("
+                INSERT INTO iso_tracking (empresa_id, norma_id, item_id, estado, fecha_programada, fecha_limite, fecha_ejecucion, observaciones_internas)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                    estado = VALUES(estado),
+                    fecha_programada = VALUES(fecha_programada),
+                    fecha_limite = VALUES(fecha_limite),
+                    fecha_ejecucion = VALUES(fecha_ejecucion),
+                    observaciones_internas = VALUES(observaciones_internas)
+            ");
+            $stmt->execute([
+                $empresa_id, $norma_id, $item_id,
+                $nextEstado,
+                $fecha_programada ?: null,
+                $fecha_limite ?: null,
+                $fecha_ejecucion ?: null,
+                $obs
+            ]);
+        }
 
         // Get the tracking ID (if it was new)
         if (!$trackingId) {
@@ -272,11 +856,11 @@ try {
         }
 
         // Log History only if state changed
-        if ($previousState !== $data['estado']) {
-            $detalle = "Estado: $previousState -> {$data['estado']}";
+        if ($previousState !== $nextEstado) {
+            $detalle = "Estado: $previousState -> {$nextEstado}";
             $conn->prepare("INSERT INTO iso_historial (tracking_id, usuario_id, accion, detalle) VALUES (?, ?, ?, ?)")
                  ->execute([$trackingId, $usuario_id, 'CAMBIO_ESTADO', $detalle]);
-        } elseif ($data['observaciones_internas']) {
+        } elseif (!empty($obs)) {
              // Log comment update if state didn't change but maybe comments did (optional, but good practice)
              // For now, sticking to state change as requested
         }
@@ -298,19 +882,23 @@ try {
             throw new Exception("Norma, Requisito y Descripción son obligatorios");
         }
 
-        // Calculate order
-        $stmtOrder = $conn->prepare("SELECT MAX(orden) FROM iso_checklist_items WHERE norma_id = ?");
-        $stmtOrder->execute([$norma_id]);
-        $maxOrder = $stmtOrder->fetchColumn();
-        $orden = $maxOrder ? $maxOrder + 1 : 1;
+        $conn->beginTransaction();
+        try {
+            $stmt = $conn->prepare("
+                INSERT INTO iso_checklist_items (norma_id, categoria, numeral, requisito, descripcion_requisito, orden, no_requiere_subitems)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$norma_id, $categoria, $numeral, $requisito, $descripcion, 0, $no_requiere_subitems]);
+            $newId = $conn->lastInsertId();
 
-        $stmt = $conn->prepare("
-            INSERT INTO iso_checklist_items (norma_id, categoria, numeral, requisito, descripcion_requisito, orden, no_requiere_subitems)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt->execute([$norma_id, $categoria, $numeral, $requisito, $descripcion, $orden, $no_requiere_subitems]);
-        
-        echo json_encode(['success' => true, 'id' => $conn->lastInsertId()]);
+            iso_place_new_item_by_numeral($conn, $norma_id, $newId, $numeral);
+
+            $conn->commit();
+            echo json_encode(['success' => true, 'id' => $newId]);
+        } catch (Throwable $e) {
+            $conn->rollBack();
+            throw $e;
+        }
     }
 
     elseif ($action === 'update_item' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -335,6 +923,30 @@ try {
         $stmt->execute([$categoria, $numeral, $requisito, $descripcion, $no_requiere_subitems, $id]);
         
         echo json_encode(['success' => true]);
+    }
+
+    elseif ($action === 'reorder_items' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $data = json_decode(file_get_contents("php://input"), true);
+        $norma_id = $data['norma_id'] ?? 0;
+        $ordered_ids = $data['ordered_ids'] ?? null;
+        if (empty($norma_id) || !is_array($ordered_ids) || count($ordered_ids) === 0) {
+            throw new Exception("Datos incompletos para reordenar");
+        }
+
+        $conn->beginTransaction();
+        try {
+            $stmtUpd = $conn->prepare("UPDATE iso_checklist_items SET orden = ? WHERE id = ? AND norma_id = ?");
+            $i = 1;
+            foreach ($ordered_ids as $id) {
+                $stmtUpd->execute([$i, $id, $norma_id]);
+                $i++;
+            }
+            $conn->commit();
+            echo json_encode(['success' => true]);
+        } catch (Throwable $e) {
+            $conn->rollBack();
+            throw $e;
+        }
     }
 
     elseif ($action === 'rename_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -378,6 +990,17 @@ try {
 
         // Delete associated tracking (if any)
         $conn->prepare("DELETE FROM iso_tracking WHERE item_id = ?")->execute([$id]);
+
+        // Delete subitem evaluations (if table exists) and subitems to avoid FK issues
+        try {
+            $conn->prepare("
+                DELETE e FROM iso_subitem_evaluaciones e
+                JOIN iso_checklist_subitems s ON s.id = e.subitem_id
+                WHERE s.item_id = ?
+            ")->execute([$id]);
+        } catch (Throwable $e) {
+        }
+        $conn->prepare("DELETE FROM iso_checklist_subitems WHERE item_id = ?")->execute([$id]);
         
         // Delete item
         $conn->prepare("DELETE FROM iso_checklist_items WHERE id = ?")->execute([$id]);
@@ -390,6 +1013,13 @@ try {
         $norma_id = $_POST['norma_id'];
         $item_id = $_POST['item_id'];
         $subitem_id = !empty($_POST['subitem_id']) ? $_POST['subitem_id'] : null;
+        $mes = !empty($_POST['mes']) ? trim((string)$_POST['mes']) : null;
+        if ($mes !== null && !preg_match('/^\d{4}-\d{2}$/', $mes)) {
+            throw new Exception("Formato de mes inválido. Use YYYY-MM");
+        }
+        if ($subitem_id && $mes === null) {
+            $mes = date('Y-m');
+        }
         
         // Check if we have files (either single 'file' or multiple 'files')
         $files = [];
@@ -413,6 +1043,10 @@ try {
         }
 
         if (empty($files)) throw new Exception("No se han subido archivos válidos");
+
+        if ($subitem_id && count($files) > 1) {
+            $files = [ $files[0] ];
+        }
         
         // Ensure tracking record exists
         $stmtId = $conn->prepare("SELECT id FROM iso_tracking WHERE empresa_id=? AND norma_id=? AND item_id=?");
@@ -432,6 +1066,26 @@ try {
         $allowedExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'zip', 'rar', 'jpg', 'jpeg', 'png'];
         $uploadedCount = 0;
         $errors = [];
+
+        $hasSubitemCol = $subitem_id ? iso_column_exists($conn, 'iso_documentos', 'subitem_id') : false;
+        if ($subitem_id && !$hasSubitemCol) {
+            try {
+                $conn->exec("ALTER TABLE iso_documentos ADD COLUMN subitem_id INT NULL AFTER tracking_id");
+                $hasSubitemCol = iso_column_exists($conn, 'iso_documentos', 'subitem_id');
+            } catch (Throwable $e) {
+                $hasSubitemCol = iso_column_exists($conn, 'iso_documentos', 'subitem_id');
+            }
+        }
+
+        $hasMesCol = ($subitem_id && $mes !== null) ? iso_column_exists($conn, 'iso_documentos', 'mes') : false;
+        if ($subitem_id && $mes !== null && !$hasMesCol) {
+            try {
+                $conn->exec("ALTER TABLE iso_documentos ADD COLUMN mes VARCHAR(7) NULL AFTER subitem_id");
+                $hasMesCol = iso_column_exists($conn, 'iso_documentos', 'mes');
+            } catch (Throwable $e) {
+                $hasMesCol = iso_column_exists($conn, 'iso_documentos', 'mes');
+            }
+        }
         
         foreach ($files as $file) {
             $fileName = $file['name'];
@@ -446,11 +1100,29 @@ try {
             $targetPath = $uploadDir . $uniqueName;
             
             if (move_uploaded_file($file['tmp_name'], $targetPath)) {
-                $conn->prepare("INSERT INTO iso_documentos (tracking_id, subitem_id, nombre_archivo, ruta_archivo, tipo_archivo, usuario_id) VALUES (?, ?, ?, ?, ?, ?)")
-                     ->execute([$trackingId, $subitem_id, $fileName, $targetPath, $file['type'], $usuario_id]);
+                if ($subitem_id && $hasSubitemCol && $hasMesCol && $mes !== null) {
+                    $stmtPrev = $conn->prepare("SELECT id, ruta_archivo, nombre_archivo FROM iso_documentos WHERE tracking_id = ? AND subitem_id = ? AND mes = ? LIMIT 1");
+                    $stmtPrev->execute([$trackingId, $subitem_id, $mes]);
+                    $prev = $stmtPrev->fetch(PDO::FETCH_ASSOC);
+                    if ($prev) {
+                        if (!empty($prev['ruta_archivo']) && file_exists($prev['ruta_archivo'])) {
+                            unlink($prev['ruta_archivo']);
+                        }
+                        $conn->prepare("DELETE FROM iso_documentos WHERE id = ?")->execute([$prev['id']]);
+                    }
+
+                    $conn->prepare("INSERT INTO iso_documentos (tracking_id, subitem_id, mes, nombre_archivo, ruta_archivo, tipo_archivo, usuario_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+                         ->execute([$trackingId, $subitem_id, $mes, $fileName, $targetPath, $file['type'], $usuario_id]);
+                } elseif ($subitem_id && $hasSubitemCol) {
+                    $conn->prepare("INSERT INTO iso_documentos (tracking_id, subitem_id, nombre_archivo, ruta_archivo, tipo_archivo, usuario_id) VALUES (?, ?, ?, ?, ?, ?)")
+                         ->execute([$trackingId, $subitem_id, $fileName, $targetPath, $file['type'], $usuario_id]);
+                } else {
+                    $conn->prepare("INSERT INTO iso_documentos (tracking_id, nombre_archivo, ruta_archivo, tipo_archivo, usuario_id) VALUES (?, ?, ?, ?, ?)")
+                         ->execute([$trackingId, $fileName, $targetPath, $file['type'], $usuario_id]);
+                }
                 
                 // Log History
-                $detail = "Archivo: {$fileName}" . ($subitem_id ? " (Subitem ID: {$subitem_id})" : "");
+                $detail = "Archivo: {$fileName}" . ($subitem_id ? " (Subitem ID: {$subitem_id}" . ($mes ? ", Mes: {$mes}" : "") . ")" : "");
                 $conn->prepare("INSERT INTO iso_historial (tracking_id, usuario_id, accion, detalle) VALUES (?, ?, ?, ?)")
                      ->execute([$trackingId, $usuario_id, 'SUBIDA_DOC', $detail]);
                      
@@ -589,7 +1261,10 @@ try {
                 t.norma_id,
                 t.item_id,
                 t.estado,
+                t.fecha_programada,
                 t.fecha_limite,
+                t.fecha_ejecucion,
+                t.observaciones_internas,
                 e.nombre as empresa,
                 n.codigo as norma_codigo,
                 n.nombre as norma_nombre,
@@ -631,10 +1306,21 @@ try {
         // Actually, item_id is unique enough, but tracking needs empresa_id.
 
         if (!$item_id) throw new Exception("Item ID is required");
+
+        $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+        if (!$hasFechaProgCol) {
+            try {
+                $conn->exec("ALTER TABLE iso_subitem_evaluaciones ADD COLUMN fecha_programada DATE NULL AFTER anio");
+                $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+            } catch (Throwable $e) {
+                $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+            }
+        }
+        $fechaProgSelect = $hasFechaProgCol ? ", e.fecha_programada" : "";
         
         // Fetch subitems with their annual evaluation data
         $sql = "SELECT s.*, 
-                       e.hallazgos, e.estado as estado_anual,
+                       e.hallazgos, e.estado as estado_anual{$fechaProgSelect},
                        e.ene_p, e.ene_e,
                        e.feb_p, e.feb_e,
                        e.mar_p, e.mar_e,
@@ -666,9 +1352,18 @@ try {
         $trackingId = $stmtTracking->fetchColumn();
 
         if ($trackingId) {
-            $stmtDocs = $conn->prepare("SELECT id, subitem_id, nombre_archivo, ruta_archivo, tipo_archivo, created_at FROM iso_documentos WHERE tracking_id = ? AND subitem_id IS NOT NULL");
+            $hasMesCol = iso_column_exists($conn, 'iso_documentos', 'mes');
+            $select = "id, subitem_id, nombre_archivo, ruta_archivo, tipo_archivo, created_at";
+            if ($hasMesCol) $select .= ", mes";
+            $stmtDocs = $conn->prepare("SELECT {$select} FROM iso_documentos WHERE tracking_id = ? AND subitem_id IS NOT NULL");
             $stmtDocs->execute([$trackingId]);
             $documents = $stmtDocs->fetchAll(PDO::FETCH_ASSOC);
+            if (!$hasMesCol) {
+                foreach ($documents as &$d) {
+                    $d['mes'] = !empty($d['created_at']) ? date('Y-m', strtotime($d['created_at'])) : null;
+                }
+                unset($d);
+            }
 
             // Attach documents to subitems
             foreach ($subitems as &$sub) {
@@ -722,7 +1417,28 @@ try {
     elseif ($action === 'delete_subitem') {
         $id = $_GET['id'] ?? 0;
         if (!$id) throw new Exception("ID is required");
+
+        $hasSubitemCol = iso_column_exists($conn, 'iso_documentos', 'subitem_id');
+        if ($hasSubitemCol) {
+            $stmtDocs = $conn->prepare("SELECT id, tracking_id, nombre_archivo, ruta_archivo FROM iso_documentos WHERE subitem_id = ?");
+            $stmtDocs->execute([$id]);
+            $docs = $stmtDocs->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($docs as $doc) {
+                if (!empty($doc['ruta_archivo']) && file_exists($doc['ruta_archivo'])) {
+                    unlink($doc['ruta_archivo']);
+                }
+                $conn->prepare("DELETE FROM iso_documentos WHERE id = ?")->execute([$doc['id']]);
+                if (!empty($doc['tracking_id'])) {
+                    $conn->prepare("INSERT INTO iso_historial (tracking_id, usuario_id, accion, detalle) VALUES (?, ?, ?, ?)")
+                         ->execute([$doc['tracking_id'], $usuario_id, 'ELIMINACION_DOC', "Archivo: {$doc['nombre_archivo']}"]);
+                }
+            }
+        }
         
+        try {
+            $conn->prepare("DELETE FROM iso_subitem_evaluaciones WHERE subitem_id = ?")->execute([$id]);
+        } catch (Throwable $e) {
+        }
         $conn->prepare("DELETE FROM iso_checklist_subitems WHERE id = ?")->execute([$id]);
         echo json_encode(['success' => true]);
     }
@@ -738,17 +1454,38 @@ try {
             throw new Exception("Datos incompletos para evaluación");
         }
         
+        $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+        if (!$hasFechaProgCol) {
+            try {
+                $conn->exec("ALTER TABLE iso_subitem_evaluaciones ADD COLUMN fecha_programada DATE NULL AFTER anio");
+                $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+            } catch (Throwable $e) {
+                $hasFechaProgCol = iso_column_exists($conn, 'iso_subitem_evaluaciones', 'fecha_programada');
+            }
+        }
+
         // Optional fields
         $hallazgos = $data['hallazgos'] ?? '';
         $estado = $data['estado'] ?? 'Pendiente';
+        $fecha_programada = $data['fecha_programada'] ?? null;
+        if ($fecha_programada === '') $fecha_programada = null;
+        if ($fecha_programada !== null && !preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$fecha_programada)) {
+            throw new Exception("Formato de fecha_programada inválido. Use YYYY-MM-DD");
+        }
         
         // Grid fields construction
         $months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-        $params = [$subitem_id, $empresa_id, $anio, $hallazgos, $estado];
-        $updateParts = ["hallazgos = VALUES(hallazgos)", "estado = VALUES(estado)"];
-        
-        $placeholders = "?, ?, ?, ?, ?";
-        $columns = "subitem_id, empresa_id, anio, hallazgos, estado";
+        if ($hasFechaProgCol) {
+            $params = [$subitem_id, $empresa_id, $anio, $fecha_programada, $hallazgos, $estado];
+            $updateParts = ["fecha_programada = VALUES(fecha_programada)", "hallazgos = VALUES(hallazgos)", "estado = VALUES(estado)"];
+            $placeholders = "?, ?, ?, ?, ?, ?";
+            $columns = "subitem_id, empresa_id, anio, fecha_programada, hallazgos, estado";
+        } else {
+            $params = [$subitem_id, $empresa_id, $anio, $hallazgos, $estado];
+            $updateParts = ["hallazgos = VALUES(hallazgos)", "estado = VALUES(estado)"];
+            $placeholders = "?, ?, ?, ?, ?";
+            $columns = "subitem_id, empresa_id, anio, hallazgos, estado";
+        }
         
         foreach ($months as $m) {
             // Check if key exists, otherwise default to 0 (false)

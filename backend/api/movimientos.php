@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -14,6 +15,31 @@ if (!$user_data) {
     header("HTTP/1.1 401 Unauthorized");
     exit;
 }
+
+function rbac_require_any(PDO $conn, $userData, array $moduleCodes, string $method, ?string $perm = null): array {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = $perm ?? rbac_required_perm_for_request($method);
+
+    foreach ($moduleCodes as $code) {
+        if (rbac_can($conn, (int)$rolId, (string)$rolNombre, (string)$code, $required)) {
+            return [$userId, $rolId, $rolNombre, $required, $code];
+        }
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => $moduleCodes[0] ?? '',
+        "modulos" => $moduleCodes,
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require_any($conn, $user_data, ['movimientos_inventario', 'movimientos'], $method);
 
 // Función auxiliar para registrar en Kardex y actualizar Costo Promedio / FIFO
 function processKardex($conn, $movimiento, $detalles) {

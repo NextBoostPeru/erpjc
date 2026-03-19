@@ -11,16 +11,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
-    // Basic Auth Check (optional: add role check)
-    $headers = apache_request_headers();
-    $authHeader = $headers['Authorization'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    if (!preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
-        throw new Exception("Token no encontrado");
+    $jwtHandler = new JWTHandler();
+    $token = $jwtHandler->getBearerToken();
+    $userData = $jwtHandler->validateToken($token);
+    if (!$userData) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        if (isset($conn)) $conn = null;
+        exit;
     }
+
+    rbac_require($conn, $userData, 'emos', $method);
     
     switch ($method) {
         case 'GET':
@@ -70,7 +76,9 @@ try {
     }
 
 } catch (Exception $e) {
-    http_response_code(500);
+    if (http_response_code() === 200) {
+        http_response_code(500);
+    }
     echo json_encode(["error" => $e->getMessage()]);
     if (isset($conn)) $conn = null;
 }

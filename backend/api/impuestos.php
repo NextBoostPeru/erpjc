@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
@@ -24,6 +25,9 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'impuestos', $method);
 
 $action = $_GET['action'] ?? '';
 

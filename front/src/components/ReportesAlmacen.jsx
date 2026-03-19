@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { FileText, AlertTriangle, TrendingUp, TrendingDown, Package, DollarSign, Calendar } from 'lucide-react';
+import { FileText, AlertTriangle, TrendingUp, TrendingDown, Package, DollarSign, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { API_URL } from '../api/config';
 
@@ -18,18 +18,29 @@ const ReportesAlmacen = () => {
     almacen_id: ''
   });
   const [almacenes, setAlmacenes] = useState([]);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
+  const itemsPerPage = 20;
 
   useEffect(() => {
     fetchAlmacenes();
   }, []);
 
+  // Reset page when tab or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, filters]);
+
   useEffect(() => {
     fetchData();
-  }, [activeTab, filters]); // Refetch when tab or filters change
+  }, [activeTab, filters, currentPage]);
 
   const fetchAlmacenes = async () => {
     try {
-      const response = await axios.get(`${API_URL}/almacenes.php`, {
+      const response = await axios.get(`${API_URL}almacenes.php`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (Array.isArray(response.data)) {
@@ -47,16 +58,31 @@ const ReportesAlmacen = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      let url = `${API_URL}/reportes_almacen.php?action=${getActionName(activeTab)}`;
+      let url = `${API_URL}reportes_almacen.php?action=${getActionName(activeTab)}`;
       url += `&fecha_inicio=${filters.fecha_inicio}&fecha_fin=${filters.fecha_fin}`;
       if (filters.almacen_id) {
         url += `&almacen_id=${filters.almacen_id}`;
       }
       
+      // Add pagination params for supported tabs
+      if (['stock', 'kardex', 'alertas', 'rotacion'].includes(activeTab)) {
+        url += `&page=${currentPage}&limit=${itemsPerPage}`;
+      }
+      
       const response = await axios.get(url, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
-      setData(response.data);
+      
+      // Handle paginated vs non-paginated response
+      if (response.data && response.data.data && typeof response.data.total_pages !== 'undefined') {
+          setData(response.data.data);
+          setTotalPages(response.data.total_pages);
+          setTotalItems(response.data.total);
+      } else {
+          setData(response.data);
+          setTotalPages(0);
+          setTotalItems(Array.isArray(response.data) ? response.data.length : 0);
+      }
     } catch (error) {
       console.error("Error fetching report data:", error);
       setData(null);
@@ -86,6 +112,32 @@ const ReportesAlmacen = () => {
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+    
+    return (
+      <div className="flex justify-center items-center mt-4 space-x-2 py-4">
+        <button
+          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+          disabled={currentPage === 1}
+          className="p-2 rounded-full hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <span className="text-sm font-medium text-gray-700">
+          Página {currentPage} de {totalPages}
+        </span>
+        <button
+          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+          disabled={currentPage === totalPages}
+          className="p-2 rounded-full hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-600"
+        >
+          <ChevronRight size={20} />
+        </button>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     if (loading) return <div className="p-8 text-center">Cargando datos...</div>;
     if (!data) return <div className="p-8 text-center text-gray-500">No hay datos disponibles</div>;
@@ -114,6 +166,7 @@ const ReportesAlmacen = () => {
                 ))}
               </tbody>
             </table>
+            {renderPagination()}
           </div>
         );
 
@@ -150,6 +203,7 @@ const ReportesAlmacen = () => {
                 </tbody>
               </table>
             </div>
+            {renderPagination()}
           </div>
         );
 
@@ -241,6 +295,7 @@ const ReportesAlmacen = () => {
                 ))}
               </tbody>
             </table>
+            {renderPagination()}
           </div>
         );
 
@@ -312,7 +367,7 @@ const ReportesAlmacen = () => {
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-red-700">
-                      Se encontraron {data?.length || 0} productos con stock por debajo del mínimo permitido.
+                      Se encontraron {totalItems} productos con stock por debajo del mínimo permitido.
                     </p>
                   </div>
                 </div>
@@ -338,6 +393,7 @@ const ReportesAlmacen = () => {
                 ))}
               </tbody>
             </table>
+            {renderPagination()}
           </div>
         );
 

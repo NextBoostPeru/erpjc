@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -17,6 +18,9 @@ try {
         if (isset($conn)) $conn = null;
         exit;
     }
+
+    $method = $_SERVER['REQUEST_METHOD'];
+    rbac_require($conn, $userData, 'cobranzas', $method);
 
     $usuario_id = $userData->id;
     $action = $_GET['action'] ?? '';
@@ -48,6 +52,47 @@ try {
                 "vencido" => (float) ($totals['total_vencido'] ?? 0),
                 "cobrado_mes" => (float) ($cobrado['cobrado_mes'] ?? 0)
             ]);
+            break;
+
+        case 'totales_por_mes':
+            $startDate = date('Y-m-01', strtotime('-11 months'));
+            $endDate = date('Y-m-t');
+
+            $sql = "
+                SELECT 
+                    DATE_FORMAT(fecha_emision, '%Y-%m') as ym,
+                    YEAR(fecha_emision) as anio,
+                    MONTH(fecha_emision) as mes,
+                    SUM(total_importe) as total
+                FROM comprobantes_electronicos
+                WHERE estado = 'Aceptado'
+                  AND fecha_emision >= :start
+                  AND fecha_emision <= :end
+                GROUP BY anio, mes
+                ORDER BY anio, mes
+            ";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([':start' => $startDate, ':end' => $endDate]);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $map = [];
+            foreach ($rows as $r) {
+                $ym = $r['ym'] ?? null;
+                if ($ym) {
+                    $map[$ym] = (float)($r['total'] ?? 0);
+                }
+            }
+
+            $out = [];
+            for ($i = 0; $i < 12; $i++) {
+                $ym = date('Y-m', strtotime($startDate . " +$i months"));
+                $out[] = [
+                    'ym' => $ym,
+                    'total' => (float)($map[$ym] ?? 0)
+                ];
+            }
+
+            echo json_encode(['data' => $out, 'range' => ['start' => $startDate, 'end' => $endDate]]);
             break;
 
         case 'listar_pendientes':

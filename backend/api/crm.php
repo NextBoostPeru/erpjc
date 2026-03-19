@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $action = $_GET['action'] ?? '';
 
@@ -71,16 +72,23 @@ if (!$userData) {
     exit;
 }
 
-$userId = $userData->id;
-
-// Check if user is admin
-$isAdmin = false;
-$stmtRole = $conn->prepare("SELECT nombre FROM roles WHERE id = ?");
-$stmtRole->execute([$userData->rol_id]);
-$roleName = $stmtRole->fetchColumn();
-if ($roleName === 'admin' || $roleName === 'gerencia' || $roleName === 'gerente') {
-    $isAdmin = true;
+$method = $_SERVER['REQUEST_METHOD'];
+$requiredPerm = null;
+if ($action === 'search_cotizaciones' || $action === 'list' || $action === 'get_activities' || $action === 'get_users' || $action === 'get_config') {
+    $requiredPerm = 'lectura';
+} elseif ($action === 'create' || $action === 'add_activity') {
+    $requiredPerm = 'crear';
+} elseif ($action === 'update' || $action === 'regenerate_key') {
+    $requiredPerm = 'editar';
+} elseif ($action === 'delete') {
+    $requiredPerm = 'eliminacion';
+} else {
+    $requiredPerm = rbac_required_perm_for_method($method);
 }
+rbac_require($conn, $userData, 'crm', $method, $requiredPerm);
+
+[$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+$canManageAll = rbac_can($conn, (int)$rolId, (string)$rolNombre, 'permisos', 'editar');
 
 switch ($action) {
     case 'search_cotizaciones':
@@ -115,7 +123,7 @@ switch ($action) {
 
     case 'list':
         try {
-            if ($isAdmin) {
+            if ($canManageAll) {
                 $sql = "SELECT l.*, u.usuario as assigned_user_name 
                         FROM crm_leads l 
                         LEFT JOIN usuarios u ON l.assigned_to = u.id 
@@ -176,7 +184,7 @@ switch ($action) {
         $cotizaciones = $data['cotizaciones'] ?? [];
 
         // If admin creates, they can specify assigned_to. If sales, assigned to self.
-        $assigned_to = ($isAdmin && isset($data['assigned_to'])) ? $data['assigned_to'] : $userId;
+        $assigned_to = ($canManageAll && isset($data['assigned_to'])) ? $data['assigned_to'] : $userId;
 
         try {
             $conn->beginTransaction();
@@ -211,7 +219,7 @@ switch ($action) {
         $id = $data['id'];
         
         // Security check: can user edit this lead?
-        if (!$isAdmin) {
+        if (!$canManageAll) {
             $stmtCheck = $conn->prepare("SELECT id FROM crm_leads WHERE id = ? AND (assigned_to = ? OR created_by = ?)");
             $stmtCheck->execute([$id, $userId, $userId]);
             if (!$stmtCheck->fetch()) {
@@ -231,7 +239,7 @@ switch ($action) {
         if (isset($data['empresa'])) { $fields[] = "empresa = ?"; $params[] = $data['empresa']; }
         if (isset($data['mensaje'])) { $fields[] = "mensaje = ?"; $params[] = $data['mensaje']; }
         if (isset($data['estado'])) { $fields[] = "estado = ?"; $params[] = $data['estado']; }
-        if ($isAdmin && isset($data['assigned_to'])) { $fields[] = "assigned_to = ?"; $params[] = $data['assigned_to']; }
+        if ($canManageAll && isset($data['assigned_to'])) { $fields[] = "assigned_to = ?"; $params[] = $data['assigned_to']; }
         
         // New fields updates
         if (isset($data['valor'])) { $fields[] = "valor = ?"; $params[] = $data['valor']; }
@@ -291,7 +299,7 @@ switch ($action) {
          }
 
          // Security check: can user delete this lead?
-         if (!$isAdmin) {
+         if (!$canManageAll) {
              $stmtCheck = $conn->prepare("SELECT id, assigned_to, created_by FROM crm_leads WHERE id = ?");
              $stmtCheck->execute([$id]);
              $lead = $stmtCheck->fetch(PDO::FETCH_ASSOC);
@@ -322,22 +330,26 @@ switch ($action) {
         break;
 
     case 'get_users':
-        if ($isAdmin) {
-            $stmt = $conn->query("SELECT id, usuario, email FROM usuarios");
-            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-        } else {
+        if (!$canManageAll) {
             http_response_code(403);
             echo json_encode(["message" => "Acceso denegado"]);
+            break;
+        }
+        rbac_require($conn, $userData, 'permisos', 'GET', 'editar');
+        if ($canManageAll) {
+            $stmt = $conn->query("SELECT id, usuario, email FROM usuarios");
+            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         }
         break;
 
     case 'get_config':
-        if (!$isAdmin) {
+        if (!$canManageAll) {
             http_response_code(403);
             echo json_encode(["message" => "Acceso denegado"]);
             $conn = null;
             exit;
         }
+        rbac_require($conn, $userData, 'permisos', 'GET', 'editar');
         $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'crm_wp_api_key'");
         $stmt->execute();
         $apiKey = $stmt->fetchColumn();
@@ -355,11 +367,12 @@ switch ($action) {
         break;
 
     case 'regenerate_key':
-        if (!$isAdmin) {
+        if (!$canManageAll) {
             http_response_code(403);
             echo json_encode(["message" => "Acceso denegado"]);
             exit;
         }
+        rbac_require($conn, $userData, 'permisos', 'POST', 'editar');
         $newKey = 'wp_erp_' . bin2hex(random_bytes(16));
         $stmt = $conn->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'crm_wp_api_key'");
         $stmt->execute([$newKey]);
@@ -378,7 +391,7 @@ switch ($action) {
         }
 
         // Security check
-        if (!$isAdmin) {
+        if (!$canManageAll) {
             $stmtCheck = $conn->prepare("SELECT id FROM crm_leads WHERE id = ? AND (assigned_to = ? OR created_by = ?)");
             $stmtCheck->execute([$data['lead_id'], $userId, $userId]);
             if (!$stmtCheck->fetch()) {
@@ -409,7 +422,7 @@ switch ($action) {
         $leadId = $_GET['lead_id'];
         
         // Security check
-        if (!$isAdmin) {
+        if (!$canManageAll) {
             $stmtCheck = $conn->prepare("SELECT id FROM crm_leads WHERE id = ? AND (assigned_to = ? OR created_by = ?)");
             $stmtCheck->execute([$leadId, $userId, $userId]);
             if (!$stmtCheck->fetch()) {

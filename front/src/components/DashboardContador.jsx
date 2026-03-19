@@ -19,6 +19,11 @@ const DashboardContador = () => {
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user'));
 
+  const getAuthHeaders = () => {
+    const t = localStorage.getItem('token') || '';
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  };
+
   useEffect(() => {
     const fetchStats = async () => {
       if (!token) {
@@ -27,7 +32,7 @@ const DashboardContador = () => {
       }
       try {
         const res = await axios.get(`${API_URL}dashboard_contador.php`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: getAuthHeaders()
         });
         setStats(res.data);
       } catch (error) {

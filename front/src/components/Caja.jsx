@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 
 const Caja = () => {
     const navigate = useNavigate();
+    const today = useMemo(() => new Date().toISOString().split('T')[0], []);
     const [sesion, setSesion] = useState(null);
     const [movimientos, setMovimientos] = useState([]);
     const [historial, setHistorial] = useState([]);
@@ -33,7 +34,7 @@ const Caja = () => {
 
     // Forms state
     const [montoInicial, setMontoInicial] = useState('');
-    const [movimientoForm, setMovimientoForm] = useState({ tipo: 'Ingreso', monto: '', concepto: '', referencia: '', receptor: '', cuenta_contable: '' });
+    const [movimientoForm, setMovimientoForm] = useState({ tipo: 'Ingreso', fecha: today, monto: '', concepto: '', referencia: '', receptor: '', cuenta_contable: '' });
     const [cierreForm, setCierreForm] = useState({ monto_final: '', observaciones: '' });
     
     const token = localStorage.getItem('token');
@@ -53,7 +54,7 @@ const Caja = () => {
 
     const fetchUsuarios = async () => {
         try {
-            const res = await axios.get(`${API_URL}/usuarios.php`, {
+            const res = await axios.get(`${API_URL}usuarios.php`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setUsuarios(Array.isArray(res.data.users) ? res.data.users : []);
@@ -64,7 +65,7 @@ const Caja = () => {
 
     const fetchCuentasPCGE = async () => {
         try {
-            const res = await axios.get(`${API_URL}/caja.php?action=get_pcge`, {
+            const res = await axios.get(`${API_URL}caja.php?action=get_pcge`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setCuentasPCGE(Array.isArray(res.data) ? res.data : []);
@@ -76,7 +77,7 @@ const Caja = () => {
 
     const fetchColaboradores = async () => {
         try {
-            const res = await axios.get(`${API_URL}/colaboradores.php?page=1&limit=200`, {
+            const res = await axios.get(`${API_URL}colaboradores.php?action=simple_list&limit=200`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const list = Array.isArray(res.data?.data) ? res.data.data : [];
@@ -90,7 +91,7 @@ const Caja = () => {
     const fetchEstadoCaja = async () => {
         try {
             setLoading(true);
-            const res = await axios.get(`${API_URL}/caja.php?action=estado&t=${new Date().getTime()}`, {
+            const res = await axios.get(`${API_URL}caja.php?action=estado&t=${new Date().getTime()}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
@@ -114,7 +115,7 @@ const Caja = () => {
 
     const fetchMovimientos = async () => {
         try {
-            const res = await axios.get(`${API_URL}/caja.php?action=listar_movimientos&t=${new Date().getTime()}&user_id=${selectedUser}`, {
+            const res = await axios.get(`${API_URL}caja.php?action=listar_movimientos&t=${new Date().getTime()}&user_id=${selectedUser}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setMovimientos(Array.isArray(res.data) ? res.data : []);
@@ -126,7 +127,7 @@ const Caja = () => {
 
     const fetchHistorial = async () => {
         try {
-            const res = await axios.get(`${API_URL}/caja.php?action=historial_sesiones&t=${new Date().getTime()}&user_id=${selectedUser}`, {
+            const res = await axios.get(`${API_URL}caja.php?action=historial_sesiones&t=${new Date().getTime()}&user_id=${selectedUser}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setHistorial(Array.isArray(res.data) ? res.data : []);
@@ -139,7 +140,7 @@ const Caja = () => {
     const handleAbrirCaja = async (e) => {
         e.preventDefault();
         try {
-            const res = await axios.post(`${API_URL}/caja.php?action=abrir`, {
+            const res = await axios.post(`${API_URL}caja.php?action=abrir`, {
                 monto_inicial: montoInicial
             }, { headers: { Authorization: `Bearer ${token}` } });
             
@@ -167,12 +168,12 @@ const Caja = () => {
         e.preventDefault();
         try {
             const endpoint = movimientoForm.id ? 'editar_movimiento' : 'movimiento';
-            await axios.post(`${API_URL}/caja.php?action=${endpoint}`, movimientoForm, {
+            await axios.post(`${API_URL}caja.php?action=${endpoint}`, movimientoForm, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
             toast.success(movimientoForm.id ? 'Movimiento actualizado' : 'Movimiento registrado');
-            setMovimientoForm({ tipo: 'Ingreso', monto: '', concepto: '', referencia: '', receptor: '', cuenta_contable: '' });
+            setMovimientoForm({ tipo: 'Ingreso', fecha: today, monto: '', concepto: '', referencia: '', receptor: '', cuenta_contable: '' });
             setActiveModal(null);
             fetchEstadoCaja(); 
             fetchMovimientos();
@@ -185,6 +186,7 @@ const Caja = () => {
         setMovimientoForm({
             id: mov.id,
             tipo: mov.tipo,
+            fecha: String(mov.fecha || '').slice(0, 10) || today,
             monto: mov.monto,
             concepto: mov.concepto,
             referencia: mov.referencia || '',
@@ -197,7 +199,7 @@ const Caja = () => {
     const handleEliminarMovimiento = async (id) => {
         if (!window.confirm('¿Está seguro de eliminar este movimiento?')) return;
         try {
-            await axios.post(`${API_URL}/caja.php?action=eliminar_movimiento`, { id }, {
+            await axios.post(`${API_URL}caja.php?action=eliminar_movimiento`, { id }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             toast.success('Movimiento eliminado');
@@ -213,7 +215,7 @@ const Caja = () => {
         if (!window.confirm('¿Está seguro de cerrar la caja? Esta acción no se puede deshacer.')) return;
         
         try {
-            const res = await axios.post(`${API_URL}/caja.php?action=cerrar`, {
+            const res = await axios.post(`${API_URL}caja.php?action=cerrar`, {
                 sesion_id: sesion.id,
                 monto_final: cierreForm.monto_final,
                 observaciones: cierreForm.observaciones
@@ -370,13 +372,13 @@ const Caja = () => {
                             </button>
                         )}
                          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 font-medium shadow-sm" onClick={() => {
-                             setMovimientoForm({...movimientoForm, tipo: 'Ingreso'});
+                             setMovimientoForm({ tipo: 'Ingreso', fecha: today, monto: '', concepto: '', referencia: '', receptor: '', cuenta_contable: '' });
                              setActiveModal('movimiento');
                          }}>
                             <Plus size={16}/> Registrar Ingreso
                          </button>
                          <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 font-medium shadow-sm" onClick={() => {
-                             setMovimientoForm({...movimientoForm, tipo: 'Egreso'});
+                             setMovimientoForm({ tipo: 'Egreso', fecha: today, monto: '', concepto: '', referencia: '', receptor: '', cuenta_contable: '' });
                              setActiveModal('movimiento');
                          }}>
                             <ArrowDownCircle size={16}/> Registrar Egreso
@@ -626,6 +628,16 @@ const Caja = () => {
                         </div>
                         <form onSubmit={handleRegistrarMovimiento}>
                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">Fecha</label>
+                                    <input
+                                        type="date"
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                        value={movimientoForm.fecha || today}
+                                        onChange={e => setMovimientoForm({ ...movimientoForm, fecha: e.target.value })}
+                                        required
+                                    />
+                                </div>
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-gray-700">Monto</label>
                                     <div className="relative">

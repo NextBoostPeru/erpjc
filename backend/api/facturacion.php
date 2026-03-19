@@ -15,6 +15,7 @@ ini_set('display_errors', 1);
 header("Content-Type: application/json; charset=UTF-8");
 
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/includes/facturacion_functions.php';
 
@@ -24,25 +25,32 @@ use Dompdf\Dompdf;
 
 $action = $_GET['action'] ?? '';
 
-// Validar JWT (excepto para acciones públicas)
-$public_actions = ['consulta_tc', 'listar', 'consulta_ruc', 'sincronizar_nubefact', 'enviar_sunat', 'anular', 'consultar_sunat', 'proxy_pdf', 'buscar_productos', 'buscar_clientes', 'enviar_correo'];
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$userData = $jwtHandler->validateToken($token);
 
-if (!in_array($action, $public_actions)) {
-    $jwtHandler = new JWTHandler();
-    $token = $jwtHandler->getBearerToken();
-    $userData = $jwtHandler->validateToken($token);
+if ($userData) {
+    $userData = json_decode(json_encode($userData), true);
+}
 
-    if ($userData) {
-        // Convertir stdClass a array para evitar errores de acceso
-        $userData = json_decode(json_encode($userData), true);
-    }
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
 
-    if (!$userData) {
-        http_response_code(401);
-        echo json_encode(["message" => "Acceso no autorizado"]);
-        if (isset($conn)) $conn = null;
-        exit;
-    }
+$method = $_SERVER['REQUEST_METHOD'];
+$no_rbac_actions = ['consulta_tc', 'consulta_ruc', 'buscar_productos', 'buscar_clientes'];
+$moduleCode = $action === 'sincronizar_nubefact' ? 'configuracion' : 'facturacion_electronica';
+$permOverride = null;
+if (in_array($action, ['anular', 'eliminar'], true)) {
+    $permOverride = 'eliminacion';
+} elseif ($action === 'sincronizar_nubefact') {
+    $permOverride = 'editar';
+}
+if (!in_array($action, $no_rbac_actions, true)) {
+    rbac_require($conn, $userData, $moduleCode, $method, $permOverride);
 }
 
 // Helper para crear directorio si no existe
@@ -137,6 +145,37 @@ switch ($action) {
         } catch (Exception $e) {
             http_response_code(500);
             echo json_encode(["message" => "Error al obtener detalles: " . $e->getMessage()]);
+        }
+        break;
+
+    case 'obtener_cabecera':
+        $id = $_GET['id'] ?? 0;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID requerido"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+        try {
+            $stmt = $conn->prepare("
+                SELECT ce.*, c.email as cliente_email 
+                FROM comprobantes_electronicos ce
+                LEFT JOIN clientes c ON ce.cliente_num_doc = c.num_doc
+                WHERE ce.id = :id
+                LIMIT 1
+            ");
+            $stmt->execute([':id' => $id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                http_response_code(404);
+                echo json_encode(["message" => "Comprobante no encontrado"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+            echo json_encode($row);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "Error al obtener comprobante: " . $e->getMessage()]);
         }
         break;
 
@@ -578,11 +617,15 @@ switch ($action) {
                 </LegalMonetaryTotal>
             </{$rootTag}>";
             
-            file_put_contents("../xml/{$filename}.xml", $xmlContent);
-            
-            // Actualizar ruta XML
-            $conn->prepare("UPDATE comprobantes_electronicos SET xml_path = :path WHERE id = :id")
-                 ->execute([':path' => "xml/{$filename}.xml", ':id' => $comprobante_id]);
+            if ($estado != 'Borrador') {
+                file_put_contents("../xml/{$filename}.xml", $xmlContent);
+                
+                $conn->prepare("UPDATE comprobantes_electronicos SET xml_path = :path WHERE id = :id")
+                     ->execute([':path' => "xml/{$filename}.xml", ':id' => $comprobante_id]);
+            } else {
+                $conn->prepare("UPDATE comprobantes_electronicos SET xml_path = NULL WHERE id = :id")
+                     ->execute([':id' => $comprobante_id]);
+            }
 
             // 5. Integración Contable Automática (Crear Asiento)
             if ($generar_asiento && $estado != 'Borrador') {
@@ -631,16 +674,17 @@ switch ($action) {
 
             $conn->commit();
 
-            // Intentar enviar a Nubefact automáticamente
             $nubefactResult = [];
-            try {
-                $nubefactResult = enviarComprobanteNubefact($conn, $comprobante_id);
-            } catch (Exception $e) {
-                $nubefactResult = ['success' => false, 'message' => "Error al enviar a SUNAT: " . $e->getMessage()];
+            if ($estado != 'Borrador') {
+                try {
+                    $nubefactResult = enviarComprobanteNubefact($conn, $comprobante_id);
+                } catch (Exception $e) {
+                    $nubefactResult = ['success' => false, 'message' => "Error al enviar a SUNAT: " . $e->getMessage()];
+                }
             }
 
             echo json_encode([
-                "message" => "Comprobante generado correctamente", 
+                "message" => ($estado == 'Borrador') ? "Borrador guardado correctamente" : "Comprobante generado correctamente",
                 "id" => $comprobante_id,
                 "nubefact_enviado" => $nubefactResult['success'] ?? false,
                 "nubefact_mensaje" => $nubefactResult['message'] ?? '',
@@ -699,6 +743,7 @@ switch ($action) {
             $saldo_pendiente = $data['total_importe'];
             $estado_cobro = 'Pendiente';
             $tipo_cambio = $data['tipo_cambio'] ?? $comp['tipo_cambio'];
+            $estado = $data['estado'] ?? $comp['estado'];
 
             $doc_ref_tipo = $data['doc_referencia_tipo'] ?? null;
             $doc_ref_serie = $data['doc_referencia_serie'] ?? null;
@@ -731,6 +776,7 @@ switch ($action) {
                 total_inafecta = :inafecta,
                 total_igv = :igv,
                 total_importe = :importe,
+                estado = :estado,
                 doc_referencia_tipo = :ref_tipo,
                 doc_referencia_numero = :ref_num,
                 motivo_emision = :motivo,
@@ -765,6 +811,7 @@ switch ($action) {
                 ':inafecta' => $data['total_inafecta'] ?? 0.00,
                 ':igv' => $data['total_igv'],
                 ':importe' => $data['total_importe'],
+                ':estado' => $estado,
                 ':ref_tipo' => $doc_ref_tipo,
                 ':ref_num' => $full_ref_number,
                 ':motivo' => $tipo_nota,
@@ -870,12 +917,14 @@ switch ($action) {
 
             $conn->commit();
 
-            // Intentar enviar a Nubefact automáticamente después de actualizar
             $nubefactResult = [];
-            try {
-                $nubefactResult = enviarComprobanteNubefact($conn, $id);
-            } catch (Exception $e) {
-                $nubefactResult = ['success' => false, 'message' => "Error al enviar a SUNAT: " . $e->getMessage()];
+            $shouldAutoSend = (($data['estado'] ?? null) === 'Generado') && (($comp['estado'] ?? '') === 'Borrador');
+            if ($shouldAutoSend) {
+                try {
+                    $nubefactResult = enviarComprobanteNubefact($conn, $id);
+                } catch (Exception $e) {
+                    $nubefactResult = ['success' => false, 'message' => "Error al enviar a SUNAT: " . $e->getMessage()];
+                }
             }
 
             echo json_encode([

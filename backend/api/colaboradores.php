@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 // Headers
 header("Access-Control-Allow-Origin: *");
@@ -27,8 +28,25 @@ if (!$userData) {
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    $canFullRead = false;
+    if ($method === 'GET') {
+        try {
+            rbac_ensure_roles_modulos_schema($conn);
+            [, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+            $canFullRead = rbac_can($conn, (int)$rolId, (string)$rolNombre, 'colaboradores', 'lectura');
+        } catch (Throwable $e) {
+            $canFullRead = false;
+        }
+    } else {
+        rbac_require($conn, $userData, 'colaboradores', $method);
+    }
+
     switch ($method) {
         case 'GET':
+            if ($canFullRead) {
+                rbac_require($conn, $userData, 'colaboradores', $method);
+            }
+
             // Pagination parameters
             $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
             $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
@@ -54,12 +72,27 @@ try {
             // Handle simple list for regularization (no joins, colaboradores activos o sin estado definido)
             if (isset($_GET['action']) && $_GET['action'] === 'simple_list') {
                 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 5000;
-                $query = "SELECT id, nombres, apellidos, documento_numero, estado, turno_id 
-                          FROM colaboradores 
-                          WHERE estado = 'Activo' OR estado IS NULL OR estado = '' 
-                          ORDER BY apellidos, nombres 
+                $date = isset($_GET['date']) && $_GET['date'] !== '' ? $_GET['date'] : null;
+
+                $query = "SELECT c.id, c.nombres, c.apellidos, c.documento_numero, c.estado, c.turno_id
+                          FROM colaboradores c
+                          LEFT JOIN (
+                              SELECT colaborador_id, MAX(fecha_cese) AS fecha_cese
+                              FROM ceses
+                              GROUP BY colaborador_id
+                          ) ce ON ce.colaborador_id = c.id
+                          WHERE (
+                              c.estado IS NULL OR c.estado = '' OR LOWER(c.estado) = 'activo'
+                              OR (
+                                  :date IS NOT NULL
+                                  AND LOWER(c.estado) = 'cesado'
+                                  AND ce.fecha_cese >= :date
+                              )
+                          )
+                          ORDER BY c.apellidos, c.nombres
                           LIMIT :limit";
                 $stmt = $conn->prepare($query);
+                $stmt->bindValue(':date', $date, $date === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
                 $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
                 $stmt->execute();
                 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -68,6 +101,16 @@ try {
             }
 
             if (isset($_GET['export']) && $_GET['export'] === 'true') {
+                if (!$canFullRead) {
+                    http_response_code(403);
+                    echo json_encode([
+                        "message" => "No tienes permiso para esta acción",
+                        "forbidden" => true,
+                        "modulo" => "colaboradores",
+                        "permiso" => "lectura"
+                    ]);
+                    exit;
+                }
                 handleExport($conn);
                 exit;
             }
@@ -94,14 +137,20 @@ try {
             $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
             $totalPages = ceil($total / $limit);
 
-            // 2. Get data
-            // Join with usuarios to show linked status
-            $query = "SELECT c.*, u.usuario as usuario_linked, u.id as usuario_id, u.rol_id 
-                      FROM colaboradores c 
-                      LEFT JOIN usuarios u ON c.usuario_id = u.id 
-                      $whereSQL 
-                      ORDER BY c.apellidos, c.nombres 
-                      LIMIT :limit OFFSET :offset";
+            if ($canFullRead) {
+                $query = "SELECT c.*, u.usuario as usuario_linked, u.id as usuario_id, u.rol_id 
+                          FROM colaboradores c 
+                          LEFT JOIN usuarios u ON c.usuario_id = u.id 
+                          $whereSQL 
+                          ORDER BY c.apellidos, c.nombres 
+                          LIMIT :limit OFFSET :offset";
+            } else {
+                $query = "SELECT c.id, c.nombres, c.apellidos, c.documento_numero, c.estado, c.area, c.cargo
+                          FROM colaboradores c
+                          $whereSQL
+                          ORDER BY c.apellidos, c.nombres
+                          LIMIT :limit OFFSET :offset";
+            }
             $stmt = $conn->prepare($query);
             
             foreach ($params as $key => $val) {

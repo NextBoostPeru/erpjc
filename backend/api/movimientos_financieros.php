@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 header("Content-Type: application/json");
 
@@ -25,6 +26,8 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+rbac_require($db, $userData, 'centros_costos', $method);
 
 $action = $_GET['action'] ?? '';
 

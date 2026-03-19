@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -13,8 +14,47 @@ if (!$userData) {
     exit;
 }
 
+$method = $_SERVER['REQUEST_METHOD'];
 $usuario_id = $userData->id;
 $action = $_GET['action'] ?? '';
+
+if (!($method === 'GET' && $action === 'listar_cuentas')) {
+    rbac_require($conn, $userData, 'bancos', $method);
+}
+
+function moneyToFloat($value) {
+    if ($value === null) return null;
+    if (is_int($value) || is_float($value)) return (float)$value;
+    $s = trim((string)$value);
+    if ($s === '') return null;
+    $s = preg_replace('/[^\d\.,\-]/', '', $s);
+
+    $hasComma = strpos($s, ',') !== false;
+    $hasDot = strpos($s, '.') !== false;
+
+    if ($hasComma && $hasDot) {
+        $lastComma = strrpos($s, ',');
+        $lastDot = strrpos($s, '.');
+        if ($lastComma > $lastDot) {
+            $s = str_replace('.', '', $s);
+            $s = str_replace(',', '.', $s);
+        } else {
+            $s = str_replace(',', '', $s);
+        }
+    } elseif ($hasComma) {
+        $s = str_replace('.', '', $s);
+        $s = str_replace(',', '.', $s);
+    } else {
+        if (substr_count($s, '.') > 1) {
+            $parts = explode('.', $s);
+            $dec = array_pop($parts);
+            $s = implode('', $parts) . '.' . $dec;
+        }
+    }
+
+    if (!is_numeric($s)) return null;
+    return (float)$s;
+}
 
 switch ($action) {
     case 'listar_cuentas':
@@ -51,6 +91,8 @@ switch ($action) {
             exit;
         }
 
+        $saldoInicial = moneyToFloat($data['saldo_inicial'] ?? 0) ?? 0;
+        $mostrarEnPdf = !empty($data['mostrar_en_pdf']) ? 1 : 0;
         $sql = "INSERT INTO bancos_cuentas (nombre_banco, numero_cuenta, tipo_cuenta, moneda, saldo_actual, cuenta_contable, cci, titular, mostrar_en_pdf) 
                 VALUES (:nombre, :numero, :tipo, :moneda, :saldo, :contable, :cci, :titular, :mostrar)";
         $stmt = $conn->prepare($sql);
@@ -59,11 +101,11 @@ switch ($action) {
             ':numero' => $data['numero_cuenta'],
             ':tipo' => $data['tipo_cuenta'],
             ':moneda' => $data['moneda'],
-            ':saldo' => $data['saldo_inicial'],
+            ':saldo' => $saldoInicial,
             ':contable' => $data['cuenta_contable'] ?? null,
             ':cci' => $data['cci'] ?? null,
             ':titular' => $data['titular'] ?? null,
-            ':mostrar' => $data['mostrar_en_pdf'] ? 1 : 0
+            ':mostrar' => $mostrarEnPdf
         ])) {
             echo json_encode(["message" => "Cuenta bancaria creada"]);
         } else {
@@ -81,6 +123,7 @@ switch ($action) {
             exit;
         }
 
+        $mostrarEnPdf = !empty($data['mostrar_en_pdf']) ? 1 : 0;
         $sql = "UPDATE bancos_cuentas SET 
                     nombre_banco = :nombre, 
                     numero_cuenta = :numero, 
@@ -100,7 +143,7 @@ switch ($action) {
             ':contable' => $data['cuenta_contable'] ?? null,
             ':cci' => $data['cci'] ?? null,
             ':titular' => $data['titular'] ?? null,
-            ':mostrar' => $data['mostrar_en_pdf'] ? 1 : 0,
+            ':mostrar' => $mostrarEnPdf,
             ':id' => $data['id']
         ])) {
             echo json_encode(["message" => "Cuenta actualizada"]);
@@ -154,19 +197,70 @@ switch ($action) {
             break;
         }
 
+        $hasPaging = isset($_GET['page']) || isset($_GET['limit']) || isset($_GET['search']);
+        if (!$hasPaging) {
+            $sql = "SELECT m.*, u.usuario 
+                    FROM bancos_movimientos m 
+                    LEFT JOIN usuarios u ON m.usuario_id = u.id 
+                    WHERE m.cuenta_id = :id 
+                    ORDER BY m.fecha DESC LIMIT 100";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([':id' => $cuenta_id]);
+            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+            break;
+        }
+
+        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        if ($page < 1) $page = 1;
+
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
+        if ($limit < 1) $limit = 20;
+        if ($limit > 200) $limit = 200;
+
+        $search = trim((string)($_GET['search'] ?? ''));
+
+        $where = "m.cuenta_id = :id";
+        $params = [':id' => $cuenta_id];
+        if ($search !== '') {
+            $where .= " AND (m.concepto LIKE :q OR m.referencia LIKE :q OR m.entidad LIKE :q OR u.usuario LIKE :q)";
+            $params[':q'] = '%' . $search . '%';
+        }
+
+        $sqlCount = "SELECT COUNT(*) 
+                     FROM bancos_movimientos m 
+                     LEFT JOIN usuarios u ON m.usuario_id = u.id 
+                     WHERE $where";
+        $stmtCount = $conn->prepare($sqlCount);
+        $stmtCount->execute($params);
+        $total = (int)$stmtCount->fetchColumn();
+        $totalPages = max(1, (int)ceil($total / $limit));
+        if ($page > $totalPages) $page = $totalPages;
+        $offset = ($page - 1) * $limit;
+
         $sql = "SELECT m.*, u.usuario 
                 FROM bancos_movimientos m 
                 LEFT JOIN usuarios u ON m.usuario_id = u.id 
-                WHERE m.cuenta_id = :id 
-                ORDER BY m.fecha DESC LIMIT 100";
+                WHERE $where 
+                ORDER BY m.fecha DESC 
+                LIMIT $limit OFFSET $offset";
         $stmt = $conn->prepare($sql);
-        $stmt->execute([':id' => $cuenta_id]);
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        $stmt->execute($params);
+
+        echo json_encode([
+            "data" => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            "pagination" => [
+                "total" => $total,
+                "page" => $page,
+                "limit" => $limit,
+                "totalPages" => $totalPages
+            ]
+        ]);
         break;
 
     case 'registrar_movimiento':
         $data = json_decode(file_get_contents("php://input"), true);
-        if (empty($data['cuenta_id']) || empty($data['monto']) || !is_numeric($data['monto']) || $data['monto'] <= 0) {
+        $monto = moneyToFloat($data['monto'] ?? null);
+        if (empty($data['cuenta_id']) || $monto === null || $monto <= 0 || empty($data['tipo']) || empty($data['concepto'])) {
             http_response_code(400);
             echo json_encode(["message" => "Datos inválidos: Monto debe ser mayor a 0"]);
             exit;
@@ -187,12 +281,12 @@ switch ($action) {
                 ':cid' => $data['cuenta_id'],
                 ':tipo' => $data['tipo'], // Ingreso, Egreso, Transferencia
                 ':origen' => $data['origen_destino'] ?? 'Ventanilla',
-                ':monto' => $data['monto'],
+                ':monto' => $monto,
                 ':concepto' => $data['concepto'],
                 ':ref' => $data['referencia'] ?? '',
                 ':entidad' => $data['entidad'] ?? '',
                 ':uid' => $usuario_id,
-                ':fecha' => isset($data['fecha']) ? $data['fecha'] : null
+                ':fecha' => !empty($data['fecha']) ? $data['fecha'] : null
             ]);
             $movimiento_id = $conn->lastInsertId();
 
@@ -200,7 +294,7 @@ switch ($action) {
             $factor = ($data['tipo'] === 'Ingreso') ? 1 : -1;
             $sql = "UPDATE bancos_cuentas SET saldo_actual = saldo_actual + :monto WHERE id = :id";
             $stmt = $conn->prepare($sql);
-            $stmt->execute([':monto' => $data['monto'] * $factor, ':id' => $data['cuenta_id']]);
+            $stmt->execute([':monto' => $monto * $factor, ':id' => $data['cuenta_id']]);
 
             // 3. Integración Contable (Simplificada)
             if (!empty($data['cuenta_contable'])) {
@@ -224,12 +318,12 @@ switch ($action) {
 
                 if ($data['tipo'] === 'Ingreso') {
                     // Debe: Banco, Haber: Contrapartida
-                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_banco, ':debe' => $data['monto'], ':haber' => 0]);
-                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_contra, ':debe' => 0, ':haber' => $data['monto']]);
+                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_banco, ':debe' => $monto, ':haber' => 0]);
+                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_contra, ':debe' => 0, ':haber' => $monto]);
                 } else {
                     // Haber: Banco, Debe: Contrapartida
-                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_contra, ':debe' => $data['monto'], ':haber' => 0]);
-                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_banco, ':debe' => 0, ':haber' => $data['monto']]);
+                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_contra, ':debe' => $monto, ':haber' => 0]);
+                    $stmtDet->execute([':aid' => $asiento_id, ':cta' => $cta_banco, ':debe' => 0, ':haber' => $monto]);
                 }
             }
 
@@ -245,7 +339,8 @@ switch ($action) {
 
     case 'transferencia':
         $data = json_decode(file_get_contents("php://input"), true);
-        if (empty($data['cuenta_origen']) || empty($data['monto']) || !is_numeric($data['monto']) || $data['monto'] <= 0) {
+        $monto = moneyToFloat($data['monto'] ?? null);
+        if (empty($data['cuenta_origen']) || $monto === null || $monto <= 0) {
             http_response_code(400);
             echo json_encode(["message" => "Datos inválidos"]);
             exit;
@@ -281,15 +376,15 @@ switch ($action) {
                     VALUES (:cid, 'Transferencia', :monto, :concepto, :ref, :uid, IFNULL(:fecha, NOW()))";
             $conn->prepare($sql)->execute([
                 ':cid' => $data['cuenta_origen'],
-                ':monto' => $data['monto'],
+                ':monto' => $monto,
                 ':concepto' => 'Transferencia a ' . $nombre_destino, 
                 ':ref' => $data['referencia'],
                 ':uid' => $usuario_id,
-                ':fecha' => isset($data['fecha']) ? $data['fecha'] : null
+                ':fecha' => !empty($data['fecha']) ? $data['fecha'] : null
             ]);
             // Actualizar Saldo Origen
             $conn->prepare("UPDATE bancos_cuentas SET saldo_actual = saldo_actual - :m WHERE id = :id")
-                 ->execute([':m' => $data['monto'], ':id' => $data['cuenta_origen']]);
+                 ->execute([':m' => $monto, ':id' => $data['cuenta_origen']]);
 
             // 2. Entrada a Destino (si es interna)
             if (!empty($data['cuenta_destino_id'])) {
@@ -297,15 +392,15 @@ switch ($action) {
                         VALUES (:cid, 'Ingreso', :monto, :concepto, :ref, :uid, IFNULL(:fecha, NOW()))";
                 $conn->prepare($sql)->execute([
                     ':cid' => $data['cuenta_destino_id'],
-                    ':monto' => $data['monto'],
+                    ':monto' => $monto,
                     ':concepto' => 'Transferencia desde ' . $nombre_origen,
                     ':ref' => $data['referencia'],
                     ':uid' => $usuario_id,
-                    ':fecha' => isset($data['fecha']) ? $data['fecha'] : null
+                    ':fecha' => !empty($data['fecha']) ? $data['fecha'] : null
                 ]);
                 // Actualizar Saldo Destino
                 $conn->prepare("UPDATE bancos_cuentas SET saldo_actual = saldo_actual + :m WHERE id = :id")
-                     ->execute([':m' => $data['monto'], ':id' => $data['cuenta_destino_id']]);
+                     ->execute([':m' => $monto, ':id' => $data['cuenta_destino_id']]);
             }
 
             $conn->commit();
@@ -319,7 +414,8 @@ switch ($action) {
 
     case 'emitir_cheque':
         $data = json_decode(file_get_contents("php://input"), true);
-        if (empty($data['cuenta_id']) || empty($data['monto']) || !is_numeric($data['monto']) || $data['monto'] <= 0 || empty($data['numero_cheque'])) {
+        $monto = moneyToFloat($data['monto'] ?? null);
+        if (empty($data['cuenta_id']) || $monto === null || $monto <= 0 || empty($data['numero_cheque'])) {
             http_response_code(400);
             echo json_encode(["message" => "Datos inválidos"]);
             exit;
@@ -340,7 +436,7 @@ switch ($action) {
                     VALUES (:cid, 'Egreso', 'Cheque', :monto, :concepto, :ref, :entidad, :uid, IFNULL(:fecha, NOW()))";
             $conn->prepare($sql)->execute([
                 ':cid' => $data['cuenta_id'],
-                ':monto' => $data['monto'],
+                ':monto' => $monto,
                 ':concepto' => 'Cheque Girado: ' . $data['numero_cheque'],
                 ':ref' => $data['numero_cheque'],
                 ':entidad' => $data['beneficiario'],
@@ -356,9 +452,9 @@ switch ($action) {
                 ':cid' => $data['cuenta_id'],
                 ':num' => $data['numero_cheque'],
                 ':ben' => $data['beneficiario'],
-                ':monto' => $data['monto'],
-                ':fecha' => $data['fecha_emision'],
-                ':pago' => $data['fecha_pago'],
+                ':monto' => $monto,
+                ':fecha' => !empty($data['fecha_emision']) ? $data['fecha_emision'] : null,
+                ':pago' => !empty($data['fecha_pago']) ? $data['fecha_pago'] : null,
                 ':mid' => $mov_id
             ]);
 
@@ -421,17 +517,21 @@ switch ($action) {
             }
 
             // Campos editables
-            $nuevo_monto = isset($data['monto']) && is_numeric($data['monto']) ? (float)$data['monto'] : (float)$mov['monto'];
-            if ($nuevo_monto <= 0) {
-                http_response_code(400);
-                echo json_encode(["message" => "Monto inválido"]);
-                exit;
+            $nuevo_monto = (float)$mov['monto'];
+            if (array_key_exists('monto', $data)) {
+                $parsed = moneyToFloat($data['monto']);
+                if ($parsed === null || $parsed <= 0) {
+                    http_response_code(400);
+                    echo json_encode(["message" => "Monto inválido"]);
+                    exit;
+                }
+                $nuevo_monto = $parsed;
             }
             $concepto = $data['concepto'] ?? $mov['concepto'];
             $referencia = $data['referencia'] ?? $mov['referencia'];
             $entidad = $data['entidad'] ?? $mov['entidad'];
             $origen_destino = $data['origen_destino'] ?? $mov['origen_destino'];
-            $fecha = $data['fecha'] ?? null; // opcional
+            $fecha = !empty($data['fecha']) ? $data['fecha'] : null;
 
             $conn->beginTransaction();
             // Ajustar saldo por delta

@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 // Auth Helper
 function getAuthorizationHeader(){
@@ -64,6 +65,8 @@ try {
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    rbac_require($conn, $userData, 'centro_de_costos_avanzado', $method);
+
     switch ($method) {
         case 'GET':
             $stmt = $conn->prepare("SELECT * FROM distribucion_gastos ORDER BY id DESC");

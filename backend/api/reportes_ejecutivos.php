@@ -15,11 +15,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 include_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
-// Validar Token JWT (Simulado/Básico)
-// $headers = getallheaders(); // Comentado por compatibilidad
-// $authHeader = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-// En producción, decodificar y validar JWT aquí.
+$method = $_SERVER['REQUEST_METHOD'];
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require($conn, $userData, 'reportes_ejecutivos', $method);
 
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 

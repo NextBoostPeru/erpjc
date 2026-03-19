@@ -2,6 +2,7 @@
 include_once '../config/db.php';
 require_once '../config/jwt.php';
 require_once __DIR__ . '/helpers/StockHelper.php';
+require_once '../config/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -23,6 +24,8 @@ if (!$userData) {
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+rbac_require($conn, $userData, 'alquileres', $method);
 
 function ensureTables($conn) {
     $conn->exec("CREATE TABLE IF NOT EXISTS alquileres (

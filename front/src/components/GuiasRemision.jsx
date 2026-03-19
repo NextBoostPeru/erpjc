@@ -265,7 +265,7 @@ const GuiasRemision = () => {
   };
 
   const handlePrintLocal = async (guia) => {
-    const toastId = toast.loading("Verificando PDF oficial...");
+    const toastId = toast.loading("Buscando PDF oficial...");
     try {
       // 1. Get full details
       const res = await axios.get(`${API_URL}guias_remision.php?id=${guia.id}`, {
@@ -279,14 +279,81 @@ const GuiasRemision = () => {
           toast.dismiss(toastId);
           toast.success("Abriendo PDF Oficial de SUNAT");
           return;
-      } else {
+      }
+
+      if (fullGuia.estado === 'Emitida') {
           toast.dismiss(toastId);
-          await sendToSunat(fullGuia);
+          toast.error("Primero envíe la guía a SUNAT");
           return;
       }
+
+      toast.dismiss(toastId);
+      await consultarStatus(fullGuia);
+      const res2 = await axios.get(`${API_URL}guias_remision.php?id=${guia.id}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const refreshed = res2.data;
+      if (refreshed.enlace_pdf) {
+        window.open(refreshed.enlace_pdf, '_blank');
+        toast.success("Abriendo PDF Oficial de SUNAT");
+        return;
+      }
+      toast.error("SUNAT aún no generó el PDF de la guía");
     } catch (error) {
       console.error(error);
       toast.error("Error al procesar PDF oficial");
+    } finally {
+      toast.dismiss(toastId);
+    }
+  };
+
+  const downloadPdfOficial = async (guia) => {
+    const toastId = toast.loading('Descargando PDF...');
+    try {
+      const res = await axios.get(`${API_URL}guias_remision.php?action=download_pdf&id=${guia.id}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        responseType: 'blob',
+        validateStatus: () => true
+      });
+
+      const contentType = (res.headers && (res.headers['content-type'] || res.headers['Content-Type'])) || '';
+
+      if (
+        res.status !== 200 ||
+        typeof contentType !== 'string' ||
+        !contentType.toLowerCase().includes('application/pdf')
+      ) {
+        let msg = 'No se pudo descargar el PDF';
+        try {
+          const text = await res.data.text();
+          try {
+            const parsed = JSON.parse(text);
+            msg = parsed.error || parsed.message || msg;
+          } catch (e) {
+            if (text && typeof text === 'string') {
+              msg = text.substring(0, 200);
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+        toast.error(msg);
+        return;
+      }
+
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `GUIA_${guia.serie}-${guia.numero}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('PDF descargado');
+    } catch (error) {
+      console.error(error);
+      toast.error('Error al descargar el PDF');
     } finally {
       toast.dismiss(toastId);
     }
@@ -553,15 +620,9 @@ const GuiasRemision = () => {
                       </button>
                     )}
                     
-                    {guia.enlace_pdf ? (
-                       <a href={guia.enlace_pdf} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-gray-900" title="Imprimir PDF Oficial">
-                          <Printer size={18} />
-                       </a>
-                    ) : (
-                       <button onClick={() => handlePrintLocal(guia)} className="text-gray-500 hover:text-gray-800" title="Enviar a SUNAT y obtener PDF">
-                          <Printer size={18} />
-                       </button>
-                    )}
+                    <button onClick={() => downloadPdfOficial(guia)} className={`${guia.enlace_pdf ? 'text-gray-600 hover:text-gray-900' : 'text-gray-500 hover:text-gray-800'}`} title="Descargar PDF Oficial">
+                      <Printer size={18} />
+                    </button>
 
                     <button onClick={() => handleClone(guia)} className="text-purple-600 hover:text-purple-900" title="Clonar Guía">
                       <Copy size={18} />

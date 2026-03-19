@@ -84,6 +84,7 @@ try {
         fecha_limite DATE,
         fecha_ejecucion DATE,
         observaciones_internas TEXT,
+        no_requiere_evidencia TINYINT(1) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY unique_tracking (empresa_id, norma_id, item_id),
@@ -91,6 +92,12 @@ try {
         FOREIGN KEY (norma_id) REFERENCES iso_normas(id) ON DELETE CASCADE,
         FOREIGN KEY (item_id) REFERENCES iso_checklist_items(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $colsTracking = $conn->query("DESCRIBE iso_tracking")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('no_requiere_evidencia', $colsTracking)) {
+        $conn->exec("ALTER TABLE iso_tracking ADD COLUMN no_requiere_evidencia TINYINT(1) DEFAULT 0 AFTER observaciones_internas");
+        echo "Added no_requiere_evidencia to iso_tracking.\n";
+    }
 
     // 6. ISO Documentos
     $conn->exec("CREATE TABLE IF NOT EXISTS iso_documentos (

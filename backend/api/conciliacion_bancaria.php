@@ -15,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 function getAuthorizationHeader(){
     $headers = null;
@@ -49,6 +50,25 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+rbac_ensure_roles_modulos_schema($conn);
+[, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+$required = rbac_required_perm_for_request($method);
+
+if (
+    !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'conciliacion_bancaria', $required)
+    && !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'bancos', $required)
+) {
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => "conciliacion_bancaria",
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
 
 if ($method === 'POST') {
     $action = $_GET['action'] ?? 'conciliar';

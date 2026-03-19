@@ -13,6 +13,10 @@ const VacacionesPermisos = () => {
   const [selectedColabBalance, setSelectedColabBalance] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [canCreate, setCanCreate] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
+  const [canDelete, setCanDelete] = useState(false);
+  const [approvalRights, setApprovalRights] = useState({ rrhh: false, gerente: false });
 
   const [formData, setFormData] = useState({
     colaborador_id: '',
@@ -29,11 +33,18 @@ const VacacionesPermisos = () => {
     colaborador_id: ''
   });
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   useEffect(() => {
     const userStr = localStorage.getItem('user');
     if (userStr) {
       setCurrentUser(JSON.parse(userStr));
     }
+    fetchPermissions();
+    fetchMyApprovalRights();
     fetchColaboradores();
   }, []);
 
@@ -48,7 +59,7 @@ const VacacionesPermisos = () => {
       if (filters.status) params.append('status', filters.status);
       if (filters.colaborador_id) params.append('colaborador_id', filters.colaborador_id);
       
-      const response = await axios.get(`${API_URL}vacaciones.php?${params.toString()}`);
+      const response = await axios.get(`${API_URL}vacaciones.php?${params.toString()}`, { headers: getAuthHeaders() });
       setSolicitudes(response.data.data);
     } catch (error) {
       toast.error("Error al cargar solicitudes");
@@ -59,10 +70,49 @@ const VacacionesPermisos = () => {
 
   const fetchColaboradores = async () => {
     try {
-      const response = await axios.get(`${API_URL}colaboradores.php?limit=100`);
+      const response = await axios.get(`${API_URL}colaboradores.php?limit=100`, { headers: getAuthHeaders() });
       setColaboradores(response.data.data);
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const fetchPermissions = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setCanCreate(false);
+        setCanEdit(false);
+        setCanDelete(false);
+        return;
+      }
+      const response = await axios.get(`${API_URL}check_my_permissions.php?code=vacaciones_permisos`, { headers: getAuthHeaders() });
+      const p = response.data || {};
+      const canWrite = p.escritura === 1 || p.crear === 1 || p.editar === 1;
+      setCanCreate(canWrite);
+      setCanEdit(canWrite);
+      setCanDelete(p.eliminacion === 1);
+    } catch (error) {
+      setCanCreate(false);
+      setCanEdit(false);
+      setCanDelete(false);
+    }
+  };
+
+  const fetchMyApprovalRights = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setApprovalRights({ rrhh: false, gerente: false });
+        return;
+      }
+      const response = await axios.get(`${API_URL}vacaciones.php?action=my_approval_rights`, { headers: getAuthHeaders() });
+      setApprovalRights({
+        rrhh: response.data?.rrhh === 1,
+        gerente: response.data?.gerente === 1
+      });
+    } catch (error) {
+      setApprovalRights({ rrhh: false, gerente: false });
     }
   };
 
@@ -75,6 +125,8 @@ const VacacionesPermisos = () => {
             id: editingId,
             ...formData,
             documento: undefined // Don't send file object in JSON
+        }, {
+          headers: getAuthHeaders()
         });
         toast.success("Solicitud actualizada exitosamente");
       } else {
@@ -90,7 +142,7 @@ const VacacionesPermisos = () => {
         }
 
         await axios.post(`${API_URL}vacaciones.php`, data, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+            headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
         });
         toast.success("Solicitud creada exitosamente");
       }
@@ -119,7 +171,10 @@ const VacacionesPermisos = () => {
   const handleDelete = async (id) => {
     if (!window.confirm("¿Estás seguro de eliminar esta solicitud?")) return;
     try {
-        await axios.delete(`${API_URL}vacaciones.php`, { data: { id } });
+        await axios.delete(`${API_URL}vacaciones.php`, { 
+          data: { id },
+          headers: getAuthHeaders()
+        });
         toast.success("Solicitud eliminada");
         fetchSolicitudes();
     } catch (error) {
@@ -133,8 +188,9 @@ const VacacionesPermisos = () => {
 
       await axios.put(`${API_URL}vacaciones.php`, {
         id,
-        action,
-        user_id: currentUser?.id
+        action
+      }, {
+        headers: getAuthHeaders()
       });
       
       let msg = "";
@@ -152,7 +208,7 @@ const VacacionesPermisos = () => {
   const checkBalance = async (colabId) => {
     if (!colabId) return;
     try {
-      const response = await axios.get(`${API_URL}vacaciones.php?balance=true&colaborador_id=${colabId}`);
+      const response = await axios.get(`${API_URL}vacaciones.php?balance=true&colaborador_id=${colabId}`, { headers: getAuthHeaders() });
       setSelectedColabBalance(response.data);
       setBalanceModalOpen(true);
     } catch (error) {
@@ -174,12 +230,8 @@ const VacacionesPermisos = () => {
   };
 
   const renderActions = (item) => {
-    const role = currentUser?.rol_nombre?.toLowerCase();
-    if (!role) return null;
-
-    // Allow 'admin' to act as superuser
-    const isRRHH = role.includes('rrhh');
-    const isGerente = role.includes('gerente') || role.includes('gerencia');
+    const isRRHH = approvalRights.rrhh;
+    const isGerente = approvalRights.gerente;
 
     // Reject is available to both if pending their approval
     const canReject = (isRRHH && item.estado === 'Pendiente') || 
@@ -190,12 +242,16 @@ const VacacionesPermisos = () => {
         {/* Edit/Delete for Pending */}
         {item.estado === 'Pendiente' && (
             <>
-                <button onClick={() => handleEdit(item)} className="text-blue-600 hover:bg-blue-50 p-1 rounded" title="Editar">
+                {canEdit && (
+                  <button onClick={() => handleEdit(item)} className="text-blue-600 hover:bg-blue-50 p-1 rounded" title="Editar">
                     <Edit size={18} />
-                </button>
-                <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Eliminar">
+                  </button>
+                )}
+                {canDelete && (
+                  <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Eliminar">
                     <Trash2 size={18} />
-                </button>
+                  </button>
+                )}
             </>
         )}
 
@@ -258,16 +314,18 @@ const VacacionesPermisos = () => {
             >
                 <Info size={18} /> Saldos
             </button>
-            <button 
-                onClick={() => {
-                    setEditingId(null);
-                    setFormData({ colaborador_id: '', tipo: 'Vacaciones', fecha_inicio: '', fecha_fin: '', motivo: '', documento: null });
-                    setModalOpen(true);
-                }}
-                className="flex-1 sm:flex-none justify-center bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 text-sm"
-            >
-                <Plus size={18} /> Nueva
-            </button>
+            {canCreate && (
+              <button 
+                  onClick={() => {
+                      setEditingId(null);
+                      setFormData({ colaborador_id: '', tipo: 'Vacaciones', fecha_inicio: '', fecha_fin: '', motivo: '', documento: null });
+                      setModalOpen(true);
+                  }}
+                  className="flex-1 sm:flex-none justify-center bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 text-sm"
+              >
+                  <Plus size={18} /> Nueva
+              </button>
+            )}
         </div>
       </div>
 

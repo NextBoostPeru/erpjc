@@ -1,6 +1,7 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
@@ -13,9 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $jwt = new JWTHandler();
-$headers = apache_request_headers();
-$authHeader = $headers['Authorization'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-$token = str_replace('Bearer ', '', $authHeader);
+$token = $jwt->getBearerToken();
 $userData = $jwt->validateToken($token);
 
 if (!$userData) {
@@ -23,6 +22,32 @@ if (!$userData) {
     echo json_encode(["message" => "Acceso no autorizado"]);
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+function rbac_require_any(PDO $conn, $userData, array $moduleCodes, string $method, ?string $perm = null): array {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = $perm ?? rbac_required_perm_for_request($method);
+
+    foreach ($moduleCodes as $code) {
+        if (rbac_can($conn, (int)$rolId, (string)$rolNombre, (string)$code, $required)) {
+            return [$userId, $rolId, $rolNombre, $required, $code];
+        }
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => $moduleCodes[0] ?? '',
+        "modulos" => $moduleCodes,
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require_any($conn, $userData, ['dashboard_rrhh', 'dashboard'], $method);
 
 require_once 'helpers/SimpleCache.php';
 

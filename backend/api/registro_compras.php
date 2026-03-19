@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 
@@ -19,6 +20,9 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'registro_compras', $method);
 
 $action = $_GET['action'] ?? '';
 

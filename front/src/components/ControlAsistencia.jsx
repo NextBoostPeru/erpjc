@@ -64,10 +64,28 @@ const ControlAsistencia = () => {
   const [regularizationList, setRegularizationList] = useState([]);
   const [regSearch, setRegSearch] = useState('');
 
+  const token = localStorage.getItem('token');
+  const axiosConfig = { headers: { Authorization: `Bearer ${token}` } };
+  const isSunday = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(`${dateStr}T12:00:00`);
+    return Number.isFinite(d.getTime()) && d.getDay() === 0;
+  };
+  const isAbsenceStatus = (estado) => ['Falta', 'Licencia', 'Vacaciones'].includes(estado);
+  const normalizeEstadoForUI = (estado) => {
+    if (!estado) return 'Asistencia';
+    if (isAbsenceStatus(estado)) return estado;
+    return 'Asistencia';
+  };
+
   useEffect(() => {
-    fetchColaboradores();
     fetchScheduleConfig();
   }, []);
+
+  useEffect(() => {
+    const date = activeTab === 'regularizacion' ? regularizationDate : filterDate;
+    fetchColaboradores(date);
+  }, [activeTab, filterDate, regularizationDate]);
 
   useEffect(() => {
     if (activeTab === 'diario') {
@@ -79,9 +97,13 @@ const ControlAsistencia = () => {
     }
   }, [activeTab, page, filterDate, searchTerm, filterArea, filterStatus, reportMonth, reportYear, regularizationDate]);
 
-  const fetchColaboradores = async () => {
+  const fetchColaboradores = async (date) => {
     try {
-      const res = await axios.get(`${API_URL}colaboradores.php?action=simple_list&limit=5000`);
+      const dateParam = date ? encodeURIComponent(date) : '';
+      const res = await axios.get(
+        `${API_URL}colaboradores.php?action=simple_list&limit=5000&date=${dateParam}`,
+        axiosConfig
+      );
       setColaboradores(res.data.data);
     } catch (error) {
       console.error(error);
@@ -92,9 +114,12 @@ const ControlAsistencia = () => {
   const fetchAsistencias = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}asistencias.php?limit=100&page=${page}&date=${filterDate}&search=${searchTerm}&area=${filterArea}&status=${filterStatus}`);
+      const res = await axios.get(
+        `${API_URL}asistencias.php?limit=100&page=${page}&date=${filterDate}&search=${searchTerm}&area=${filterArea}&status=${filterStatus}`,
+        axiosConfig
+      );
       setAsistencias(res.data.data);
-      setTotalPages(res.data.total_pages);
+      setTotalPages(res.data?.pagination?.totalPages ?? 1);
     } catch (error) {
       console.error(error);
       toast.error("Error cargando asistencias");
@@ -106,7 +131,11 @@ const ControlAsistencia = () => {
   const handleResetDay = async () => {
     if (!window.confirm('¿Resetear asistencias del día seleccionado?')) return;
     try {
-      await axios.post(`${API_URL}asistencias.php?reset=true`, { date: filterDate, area: filterArea });
+      await axios.post(
+        `${API_URL}asistencias.php?reset=true`,
+        { date: filterDate, area: filterArea },
+        axiosConfig
+      );
       toast.success("Asistencias reseteadas");
       fetchAsistencias();
     } catch (error) {
@@ -116,7 +145,7 @@ const ControlAsistencia = () => {
 
   const fetchScheduleConfig = async () => {
     try {
-        const res = await axios.get(`${API_URL}asistencia_config.php`);
+        const res = await axios.get(`${API_URL}asistencia_config.php`, axiosConfig);
         if (res.data) {
             setScheduleConfig(res.data);
         }
@@ -128,7 +157,7 @@ const ControlAsistencia = () => {
   const handleSaveConfig = async (e) => {
     e.preventDefault();
     try {
-        await axios.post(`${API_URL}asistencia_config.php`, scheduleConfig);
+        await axios.post(`${API_URL}asistencia_config.php`, scheduleConfig, axiosConfig);
         toast.success("Horarios actualizados correctamente");
         setConfigModalOpen(false);
     } catch (error) {
@@ -190,7 +219,10 @@ const ControlAsistencia = () => {
 
   const handleExportDaily = async () => {
     try {
-        const res = await axios.get(`${API_URL}asistencias.php?limit=1000&date=${filterDate}&search=${searchTerm}&area=${filterArea}&status=${filterStatus}`);
+        const res = await axios.get(
+          `${API_URL}asistencias.php?limit=1000&date=${filterDate}&search=${searchTerm}&area=${filterArea}&status=${filterStatus}`,
+          axiosConfig
+        );
         const data = res.data.data.map(item => ({
             Colaborador: `${item.apellidos}, ${item.nombres}`,
             Documento: item.documento_numero,
@@ -221,7 +253,10 @@ const ControlAsistencia = () => {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}asistencias.php?report=monthly&month=${reportMonth}&year=${reportYear}`);
+      const res = await axios.get(
+        `${API_URL}asistencias.php?report=monthly&month=${reportMonth}&year=${reportYear}`,
+        axiosConfig
+      );
       setReportData(res.data.data);
     } catch (error) {
       toast.error("Error generando reporte");
@@ -234,8 +269,11 @@ const ControlAsistencia = () => {
     setLoading(true);
     try {
       const [colabsRes, attRes] = await Promise.all([
-        axios.get(`${API_URL}/colaboradores.php?action=simple_list&limit=5000`),
-        axios.get(`${API_URL}/asistencias.php?date=${regularizationDate}&limit=5000`)
+        axios.get(
+          `${API_URL}colaboradores.php?action=simple_list&limit=5000&date=${encodeURIComponent(regularizationDate)}`,
+          axiosConfig
+        ),
+        axios.get(`${API_URL}asistencias.php?date=${regularizationDate}&limit=5000`, axiosConfig)
       ]);
       
       const colabs = colabsRes.data.data;
@@ -252,7 +290,7 @@ const ControlAsistencia = () => {
                 fecha: regularizationDate,
                 hora_entrada: att?.hora_entrada || '',
                 hora_salida: att?.hora_salida || '',
-                estado: att?.estado || 'Asistencia',
+                estado: normalizeEstadoForUI(att?.estado),
                 observaciones: att?.observaciones || ''
             };
         });
@@ -277,7 +315,7 @@ const ControlAsistencia = () => {
   const handleBulkSubmit = async () => {
     try {
         setLoading(true);
-        await axios.post(`${API_URL}asistencias.php?bulk=true`, regularizationList);
+        await axios.post(`${API_URL}asistencias.php?bulk=true`, regularizationList, axiosConfig);
         toast.success("Asistencias guardadas correctamente");
         fetchRegularizationData();
     } catch (error) {
@@ -292,10 +330,10 @@ const ControlAsistencia = () => {
     e.preventDefault();
     try {
       if (editingId) {
-        await axios.put(`${API_URL}/asistencias.php`, { ...formData, id: editingId });
+        await axios.put(`${API_URL}asistencias.php`, { ...formData, id: editingId }, axiosConfig);
         toast.success("Asistencia actualizada");
       } else {
-        await axios.post(`${API_URL}/asistencias.php`, formData);
+        await axios.post(`${API_URL}asistencias.php`, formData, axiosConfig);
         toast.success("Asistencia registrada");
       }
       setModalOpen(false);
@@ -309,12 +347,12 @@ const ControlAsistencia = () => {
   const handleValidate = async (id, status) => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
-      await axios.put(`${API_URL}/asistencias.php`, {
+      await axios.put(`${API_URL}asistencias.php`, {
         id,
         validate: true,
         estado: status,
         user_id: user?.id
-      });
+      }, axiosConfig);
       toast.success(`Asistencia ${status.toLowerCase()}`);
       fetchAsistencias();
     } catch (error) {
@@ -344,7 +382,7 @@ const ControlAsistencia = () => {
           hora_salida: row['Salida'] // HH:MM
         }));
 
-        await axios.post(`${API_URL}asistencias.php?import=true`, formattedData);
+        await axios.post(`${API_URL}asistencias.php?import=true`, formattedData, axiosConfig);
         toast.success("Importación completada");
         setImportModalOpen(false);
         fetchAsistencias();
@@ -419,6 +457,12 @@ const ControlAsistencia = () => {
 
       {activeTab === 'diario' && (
         <div className="space-y-6 fade-in">
+          {isSunday(filterDate) && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 flex items-center gap-3">
+              <AlertTriangle size={18} className="shrink-0" />
+              <div className="text-sm font-medium">Domingo (descanso): no se registra asistencia.</div>
+            </div>
+          )}
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
@@ -525,6 +569,7 @@ const ControlAsistencia = () => {
               </button>
               <button 
                 onClick={handleResetDay}
+                disabled={isSunday(filterDate)}
                 className="flex-1 xl:flex-none justify-center bg-white border border-red-600 text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium whitespace-nowrap"
                 title="Resetear asistencias del día"
               >
@@ -532,12 +577,14 @@ const ControlAsistencia = () => {
               </button>
               <button 
                 onClick={() => setImportModalOpen(true)}
+                disabled={isSunday(filterDate)}
                 className="flex-1 xl:flex-none justify-center bg-white border border-green-600 text-green-600 hover:bg-green-50 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium whitespace-nowrap"
               >
                 <Upload size={18} /> <span className="inline">Importar</span>
               </button>
               <button 
                 onClick={() => { resetForm(); setModalOpen(true); }}
+                disabled={isSunday(filterDate)}
                 className="flex-1 xl:flex-none justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors font-medium shadow-sm whitespace-nowrap"
               >
                 <Clock size={18} /> <span className="inline">Registrar</span>
@@ -811,7 +858,7 @@ const ControlAsistencia = () => {
                         <button
                             type="button"
                             onClick={handleSetAllEntrada}
-                            disabled={loading || regularizationList.length === 0}
+                            disabled={loading || regularizationList.length === 0 || isSunday(regularizationDate)}
                             className="flex-1 flex items-center justify-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all hover:bg-white hover:shadow-sm text-gray-700 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:shadow-none"
                         >
                             <Clock size={16} className="text-green-600" /> 
@@ -821,7 +868,7 @@ const ControlAsistencia = () => {
                         <button
                             type="button"
                             onClick={handleSetAllSalida}
-                            disabled={loading || regularizationList.length === 0}
+                            disabled={loading || regularizationList.length === 0 || isSunday(regularizationDate)}
                             className="flex-1 flex items-center justify-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all hover:bg-white hover:shadow-sm text-gray-700 disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:shadow-none"
                         >
                             <Clock size={16} className="text-orange-600" /> 
@@ -832,7 +879,7 @@ const ControlAsistencia = () => {
 
                   <button 
                       onClick={handleBulkSubmit}
-                      disabled={loading}
+                      disabled={loading || isSunday(regularizationDate)}
                       className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:shadow-none min-w-[140px]"
                   >
                       <Save size={18} /> 
@@ -840,6 +887,12 @@ const ControlAsistencia = () => {
                   </button>
                 </div>
             </div>
+            {isSunday(regularizationDate) && (
+              <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 flex items-center gap-3">
+                <AlertTriangle size={18} className="shrink-0" />
+                <div className="text-sm font-medium">Domingo (descanso): no se registra asistencia masiva.</div>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -869,23 +922,29 @@ const ControlAsistencia = () => {
                                     <div className="text-xs text-gray-500">{row.documento_numero}</div>
                                 </td>
                                 <td className="p-3">
-                                    <select 
-                                        value={row.estado}
-                                        onChange={(e) => handleBulkChange(row.colaborador_id, 'estado', e.target.value)}
-                                        className={`w-full border rounded p-1 text-sm ${
-                                            row.estado === 'Falta' ? 'bg-red-50 text-red-700 border-red-200' :
-                                            row.estado === 'Asistencia' ? 'bg-green-50 text-green-700 border-green-200' :
-                                            'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                        }`}
-                                    >
-                                        <option value="Asistencia">Asistencia</option>
-                                        <option value="Falta">Falta</option>
-                                        <option value="Licencia">Licencia</option>
-                                        <option value="Vacaciones">Vacaciones</option>
-                                    </select>
+                                    {isSunday(regularizationDate) ? (
+                                      <div className="w-full border rounded p-2 text-sm bg-amber-50 text-amber-800 border-amber-200 font-medium">
+                                        Domingo
+                                      </div>
+                                    ) : (
+                                      <select 
+                                          value={row.estado}
+                                          onChange={(e) => handleBulkChange(row.colaborador_id, 'estado', e.target.value)}
+                                          className={`w-full border rounded p-1 text-sm ${
+                                              row.estado === 'Falta' ? 'bg-red-50 text-red-700 border-red-200' :
+                                              row.estado === 'Asistencia' ? 'bg-green-50 text-green-700 border-green-200' :
+                                              'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                          }`}
+                                      >
+                                          <option value="Asistencia">Asistencia</option>
+                                          <option value="Falta">Falta</option>
+                                          <option value="Licencia">Licencia</option>
+                                          <option value="Vacaciones">Vacaciones</option>
+                                      </select>
+                                    )}
                                 </td>
                                 <td className="p-3">
-                                    {row.estado === 'Asistencia' && (
+                                    {!isSunday(regularizationDate) && row.estado === 'Asistencia' && (
                                         <input 
                                             type="time" 
                                             value={row.hora_entrada}
@@ -895,7 +954,7 @@ const ControlAsistencia = () => {
                                     )}
                                 </td>
                                 <td className="p-3">
-                                    {row.estado === 'Asistencia' && (
+                                    {!isSunday(regularizationDate) && row.estado === 'Asistencia' && (
                                         <input 
                                             type="time" 
                                             value={row.hora_salida}
@@ -911,6 +970,7 @@ const ControlAsistencia = () => {
                                         onChange={(e) => handleBulkChange(row.colaborador_id, 'observaciones', e.target.value)}
                                         className="w-full border rounded p-1 text-sm"
                                         placeholder="..."
+                                        disabled={isSunday(regularizationDate)}
                                     />
                                 </td>
                             </tr>
@@ -927,6 +987,12 @@ const ControlAsistencia = () => {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
             <h2 className="text-xl font-bold mb-4">{editingId ? 'Editar Asistencia' : 'Registrar Asistencia'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {isSunday(formData.fecha) && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-sm font-medium flex items-center gap-2">
+                  <AlertTriangle size={16} className="shrink-0" />
+                  Domingo (descanso): no se registra asistencia.
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium mb-1">Colaborador</label>
                 <select 
@@ -995,6 +1061,8 @@ const ControlAsistencia = () => {
                     <input 
                       type="number" 
                       step="0.25"
+                      min="0"
+                      max="16"
                       className="w-full border rounded-lg p-2"
                       value={formData.horas_extras}
                       onChange={e => setFormData({...formData, horas_extras: e.target.value})}
@@ -1014,7 +1082,7 @@ const ControlAsistencia = () => {
               </div>
               <div className="flex justify-end gap-2 pt-4">
                 <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Guardar</button>
+                <button type="submit" disabled={isSunday(formData.fecha)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">Guardar</button>
               </div>
             </form>
           </div>

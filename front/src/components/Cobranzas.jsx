@@ -17,6 +17,8 @@ const Cobranzas = () => {
   const [view, setView] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [dashboardData, setDashboardData] = useState({ por_cobrar: 0, vencido: 0, cobrado_mes: 0 });
+  const [totalesPorMes, setTotalesPorMes] = useState([]);
+  const [loadingTotalesPorMes, setLoadingTotalesPorMes] = useState(false);
   
   // Pendientes states
   const [pendientes, setPendientes] = useState([]);
@@ -73,6 +75,7 @@ const Cobranzas = () => {
 
   useEffect(() => {
     fetchDashboard();
+    fetchTotalesPorMes();
   }, []);
 
   useEffect(() => {
@@ -104,6 +107,21 @@ const Cobranzas = () => {
       setDashboardData(res.data);
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const fetchTotalesPorMes = async () => {
+    setLoadingTotalesPorMes(true);
+    try {
+      const res = await axios.get(`${API_URL}/cobranzas.php`, {
+        params: { action: 'totales_por_mes' },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setTotalesPorMes(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      setTotalesPorMes([]);
+    } finally {
+      setLoadingTotalesPorMes(false);
     }
   };
 
@@ -194,7 +212,7 @@ const Cobranzas = () => {
 
   const fetchCuentasBancarias = async () => {
     try {
-      const res = await axios.get(`${API_URL}/bancos.php?action=listar_cuentas`, {
+      const res = await axios.get(`${API_URL}bancos.php?action=listar_cuentas`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCuentasBancarias(res.data);
@@ -620,32 +638,72 @@ const Cobranzas = () => {
       </div>
 
       {view === 'dashboard' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 fade-in">
-          <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-500 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-                <div className="text-gray-500 text-xs uppercase tracking-wider font-bold">Total por Cobrar</div>
-                <DollarSign className="text-blue-200" size={20}/>
+        <div className="fade-in">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-blue-500 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-2">
+                  <div className="text-gray-500 text-xs uppercase tracking-wider font-bold">Total por Cobrar</div>
+                  <DollarSign className="text-blue-200" size={20}/>
+              </div>
+              <div className="text-3xl font-bold text-gray-800">{formatCurrency(dashboardData.por_cobrar)}</div>
+              <div className="text-xs text-blue-600 mt-1 font-medium">Deuda total activa</div>
             </div>
-            <div className="text-3xl font-bold text-gray-800">{formatCurrency(dashboardData.por_cobrar)}</div>
-            <div className="text-xs text-blue-600 mt-1 font-medium">Deuda total activa</div>
+            
+            <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-red-500 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-2">
+                  <div className="text-gray-500 text-xs uppercase tracking-wider font-bold">Vencido</div>
+                  <AlertCircle className="text-red-200" size={20}/>
+              </div>
+              <div className="text-3xl font-bold text-gray-800">{formatCurrency(dashboardData.vencido)}</div>
+              <div className="text-xs text-red-600 mt-1 font-medium">Requiere gestión inmediata</div>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-green-500 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-2">
+                  <div className="text-gray-500 text-xs uppercase tracking-wider font-bold">Cobrado este Mes</div>
+                  <CheckCircle className="text-green-200" size={20}/>
+              </div>
+              <div className="text-3xl font-bold text-gray-800">{formatCurrency(dashboardData.cobrado_mes)}</div>
+              <div className="text-xs text-green-600 mt-1 font-medium">Ingresos del periodo</div>
+            </div>
           </div>
-          
-          <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-red-500 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-                <div className="text-gray-500 text-xs uppercase tracking-wider font-bold">Vencido</div>
-                <AlertCircle className="text-red-200" size={20}/>
+
+          <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-6">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h2 className="text-base md:text-lg font-bold text-gray-800 flex items-center gap-2">
+                <Calendar size={18} className="text-blue-600" />
+                Total facturado por mes
+              </h2>
+              <button
+                type="button"
+                className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
+                onClick={fetchTotalesPorMes}
+              >
+                Actualizar
+              </button>
             </div>
-            <div className="text-3xl font-bold text-gray-800">{formatCurrency(dashboardData.vencido)}</div>
-            <div className="text-xs text-red-600 mt-1 font-medium">Requiere gestión inmediata</div>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-green-500 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-2">
-                <div className="text-gray-500 text-xs uppercase tracking-wider font-bold">Cobrado este Mes</div>
-                <CheckCircle className="text-green-200" size={20}/>
-            </div>
-            <div className="text-3xl font-bold text-gray-800">{formatCurrency(dashboardData.cobrado_mes)}</div>
-            <div className="text-xs text-green-600 mt-1 font-medium">Ingresos del periodo</div>
+
+            {loadingTotalesPorMes ? (
+              <div className="flex justify-center items-center py-10">
+                <Loader className="w-8 h-8 text-blue-600 animate-spin"/>
+              </div>
+            ) : totalesPorMes.length === 0 ? (
+              <div className="py-10 text-center text-gray-500">
+                No hay datos para mostrar
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {totalesPorMes.map((row) => {
+                  const label = new Date(`${row.ym}-01T00:00:00`).toLocaleDateString('es-PE', { month: 'short', year: 'numeric' });
+                  return (
+                    <div key={row.ym} className="rounded-xl border border-gray-200 p-4">
+                      <div className="text-xs uppercase tracking-wider text-gray-500 font-bold">{label}</div>
+                      <div className="mt-2 text-2xl font-bold text-gray-900">{formatCurrency(row.total)}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

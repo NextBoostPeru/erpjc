@@ -32,7 +32,8 @@ const CentrosCostos = () => {
   const [deleteData, setDeleteData] = useState({ id: null, type: '', entity: '' }); // entity: 'centro', 'servicio', 'movimiento'
 
   // Permissions
-  const [canWrite, setCanWrite] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [canDelete, setCanDelete] = useState(false);
 
   // Forms
@@ -85,8 +86,11 @@ const CentrosCostos = () => {
             headers: { Authorization: `Bearer ${token}` }
         });
         if (response.data && response.data.success !== false) {
+             const canCreateApi = response.data.crear === 1 || response.data.escritura === 1;
+             const canEditApi = response.data.editar === 1 || response.data.escritura === 1;
              apiPermission = {
-                 write: response.data.escritura === 1,
+                 create: canCreateApi,
+                 edit: canEditApi,
                  delete: response.data.eliminacion === 1
              };
         }
@@ -94,29 +98,17 @@ const CentrosCostos = () => {
     } catch (error) {
       console.error("Error checking permissions", error);
     }
-
-    // 2. Check local user role (Admin override)
-    const user = JSON.parse(localStorage.getItem('user'));
-    let isAdminOrManager = false;
     
-    if (user) {
-        const role = (user.rol_nombre || user.rol || '').toString().toLowerCase();
-        const allowedRoles = ['administrador', 'admin', 'gerencia', 'gerente', 'contador', 'finanzas'];
-        isAdminOrManager = allowedRoles.some(r => role.includes(r)) || user.rol === 1;
+    if (apiPermission) {
+      setCanCreate(apiPermission.create);
+      setCanEdit(apiPermission.edit);
+      setCanDelete(apiPermission.delete);
+      return;
     }
 
-    // 3. Final decision: Admin override OR API permission
-    if (isAdminOrManager) {
-        setCanWrite(true);
-        setCanDelete(true);
-    } else if (apiPermission) {
-        setCanWrite(apiPermission.write);
-        setCanDelete(apiPermission.delete);
-    } else {
-        // Default strict if unknown
-        setCanWrite(false);
-        setCanDelete(false);
-    }
+    setCanCreate(false);
+    setCanEdit(false);
+    setCanDelete(false);
   };
 
   const fetchColaboradores = async () => {
@@ -287,7 +279,7 @@ const CentrosCostos = () => {
                 </h1>
                 <p className="text-gray-500 text-sm">Control de centros de costos, servicios y movimientos</p>
             </div>
-            {activeTab !== 'reportes' && canWrite && (
+            {activeTab !== 'reportes' && canCreate && (
                 <button
                 onClick={() => handleOpenModal(activeTab === 'centros' ? 'centro' : activeTab === 'servicios' ? 'servicio' : 'movimiento')}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
@@ -357,7 +349,7 @@ const CentrosCostos = () => {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-right space-x-2">
-                                    {canWrite && <button onClick={() => handleOpenModal('centro', centro)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit2 size={16} /></button>}
+                                    {canEdit && <button onClick={() => handleOpenModal('centro', centro)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit2 size={16} /></button>}
                                     {canDelete && <button onClick={() => handleDelete('centro', centro)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={16} /></button>}
                                 </td>
                             </tr>
@@ -391,7 +383,7 @@ const CentrosCostos = () => {
                             <div className="flex justify-between items-start mb-2">
                                 <h3 className="font-semibold text-gray-800">{servicio.nombre}</h3>
                                 <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                                    {canWrite && <button onClick={() => handleOpenModal('servicio', servicio)} className="p-1 hover:bg-gray-100 rounded text-blue-600"><Edit2 size={14}/></button>}
+                                    {canEdit && <button onClick={() => handleOpenModal('servicio', servicio)} className="p-1 hover:bg-gray-100 rounded text-blue-600"><Edit2 size={14}/></button>}
                                     {canDelete && <button onClick={() => handleDelete('servicio', servicio)} className="p-1 hover:bg-gray-100 rounded text-red-600"><Trash2 size={14}/></button>}
                                 </div>
                             </div>
@@ -488,7 +480,7 @@ const CentrosCostos = () => {
                                         {mov.tipo === 'Egreso' ? '-' : '+'}{formatCurrency(mov.monto)}
                                     </td>
                                     <td className="px-6 py-4 text-right space-x-2">
-                                        {canWrite && <button onClick={() => handleOpenModal('movimiento', mov)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit2 size={16} /></button>}
+                                        {canEdit && <button onClick={() => handleOpenModal('movimiento', mov)} className="text-blue-600 hover:bg-blue-50 p-1 rounded"><Edit2 size={16} /></button>}
                                         {canDelete && <button onClick={() => handleDelete('movimiento', mov)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash2 size={16} /></button>}
                                     </td>
                                 </tr>

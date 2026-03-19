@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../api/config';
-import { Toaster } from 'react-hot-toast';
+import { Toaster, toast } from 'react-hot-toast';
 import Notifications from './Notifications';
 import { LogOut, LayoutDashboard, Calculator, Users, FileText, Receipt, Settings, CreditCard, Menu, X, ChevronLeft, ChevronRight, BookOpen, ShoppingCart, DollarSign, Wallet, HandCoins, Briefcase, Landmark, Contact, PieChart, Shield, Clock, Palmtree, Gift, Folder, UserMinus, UserPlus, RotateCcw, Package, BarChart3, Warehouse, ClipboardList, Truck, TrendingUp, ShoppingBag, Activity, HelpCircle, Award, Calendar, Scale, Monitor, CheckCircle, UserCheck } from 'lucide-react';
 
@@ -12,6 +12,22 @@ const Layout = ({ children }) => {
   const user = JSON.parse(localStorage.getItem('user'));
   const [serverModules, setServerModules] = useState([]);
   const rawModulos = JSON.parse(localStorage.getItem('modulos')) || [];
+
+  useEffect(() => {
+    const interceptorId = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        const status = error?.response?.status;
+        if (status === 403 && !error?.config?._suppressForbiddenToast && !error?.config?._rbacToastShown) {
+          const msg = error?.response?.data?.message || 'No tienes permiso para esta acción';
+          toast.error(msg);
+          if (error?.config) error.config._rbacToastShown = true;
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptorId);
+  }, []);
 
   useEffect(() => {
     const fetchModulesIfEmpty = async () => {
@@ -32,7 +48,16 @@ const Layout = ({ children }) => {
       }
     };
     fetchModulesIfEmpty();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onModulesUpdated = (e) => {
+      const detail = e?.detail;
+      const mods = Array.isArray(detail) ? detail : (JSON.parse(localStorage.getItem('modulos')) || []);
+      setServerModules(Array.isArray(mods) ? mods : []);
+    };
+    window.addEventListener('erpjc:modules_updated', onModulesUpdated);
+    return () => window.removeEventListener('erpjc:modules_updated', onModulesUpdated);
   }, []);
 
   const baseModules = rawModulos.length > 0 ? rawModulos : serverModules;
@@ -47,153 +72,6 @@ const Layout = ({ children }) => {
       return m;
     });
   }, [baseModules]);
-
-  // Add Instrucciones for Vendedor
-  const isVendedor = user?.rol_nombre?.toLowerCase() === 'vendedor' || 
-                     user?.rol?.toLowerCase() === 'vendedor' ||
-                     user?.rol_nombre?.toLowerCase() === 'ventas';
-
-  if (isVendedor && !modulos.some(m => m.codigo === 'dashboard_vendedor')) {
-      modulos.unshift({
-          codigo: 'dashboard_vendedor',
-          nombre: 'Dashboard Ventas',
-          ruta: '/dashboard-vendedor'
-      });
-  }
-
-  if (isVendedor && !modulos.some(m => m.codigo === 'instrucciones_facturacion')) {
-      modulos.push({
-          codigo: 'instrucciones_facturacion',
-          nombre: 'Instrucciones',
-          ruta: '/instrucciones-facturacion'
-      });
-  }
-
-  const roleName = user?.rol_nombre ? String(user.rol_nombre).toLowerCase() : '';
-  const roleVal = user?.rol ? String(user.rol).toLowerCase() : '';
-
-  // Ensure Órdenes de Trabajo for Gerencia even if localStorage is stale
-  const isGerencia = roleName.includes('geren') || 
-                     roleName.includes('direc') ||
-                     roleVal === 'gerencia' ||
-                     roleVal === '2';
-
-  if (isGerencia && !modulos.some(m => m.codigo === 'ordenes_trabajo')) {
-      modulos.push({
-          codigo: 'ordenes_trabajo',
-          nombre: 'Órdenes de Trabajo',
-          ruta: '/ordenes-trabajo'
-      });
-  }
-
-  const isAdmin = roleName.includes('admin') || 
-                  roleVal === '1' || 
-                  roleVal === 'admin';
-
-  if ((isAdmin || isGerencia) && !modulos.some(m => m.codigo === 'areas')) {
-      // Find where to insert it, maybe after users or in configuration
-      modulos.push({
-          codigo: 'areas',
-          nombre: 'Áreas de Ventas',
-          ruta: '/areas'
-      });
-  }
-
-  // Asegurar que Reportes de Ventas esté disponible para Admin y Gerencia
-  if ((isAdmin || isGerencia) && !modulos.some(m => m.codigo === 'reportes_ventas')) {
-      modulos.push({
-          codigo: 'reportes_ventas',
-          nombre: 'Reportes de Ventas',
-          ruta: '/reportes-ventas'
-      });
-  }
-
-  if ((isAdmin || isGerencia || isVendedor) && !modulos.some(m => m.codigo === 'acreditaciones')) {
-      modulos.push({
-          codigo: 'acreditaciones',
-          nombre: 'Logos Acreditaciones',
-          ruta: '/acreditaciones'
-      });
-  }
-
-  if (isGerencia && !modulos.some(m => m.codigo === 'dashboard')) {
-      modulos.unshift({
-          codigo: 'dashboard',
-          nombre: 'Dashboard Gerencial',
-          ruta: '/dashboard'
-      });
-  }
-
-  // Ensure Dashboard for RRHH
-  const isRRHH = user?.rol_nombre?.toLowerCase() === 'rrhh' || 
-                 user?.rol === 'rrhh' || 
-                 user?.rol?.toLowerCase() === 'rrhh' ||
-                 user?.rol_nombre?.toLowerCase() === 'recursos humanos';
-                 
-  if (isRRHH && !modulos.some(m => m.codigo === 'dashboard')) {
-      modulos.unshift({
-          codigo: 'dashboard',
-          nombre: 'Dashboard RRHH',
-          ruta: '/dashboard'
-      });
-  }
-
-  // Ensure Dashboard for Contador
-  const isContador = user?.rol_nombre?.toLowerCase() === 'contador' || 
-                     user?.rol === 'contador' || 
-                     user?.rol?.toLowerCase() === 'contador';
-
-  if (isContador && !modulos.some(m => m.codigo === 'dashboard')) {
-      modulos.unshift({
-          codigo: 'dashboard',
-          nombre: 'Dashboard Contable',
-          ruta: '/dashboard'
-      });
-  }
-
-  // Ensure Centros de Costos is available
-  if ((isAdmin || isContador || isGerencia) && !modulos.some(m => m.codigo === 'centros_costos')) {
-      modulos.push({
-          codigo: 'centros_costos',
-          nombre: 'Centros de Costos',
-          ruta: '/centros-costos'
-      });
-  }
-
-  // Ensure ISO Module is available
-  if ((isAdmin || isGerencia) && !modulos.some(m => m.codigo === 'gestion_iso')) {
-      modulos.push({
-          codigo: 'gestion_iso',
-          nombre: 'Gestión ISO',
-          ruta: '/gestion-iso'
-      });
-  }
-
-  // Ensure Retenciones Module is available
-  if ((isAdmin || isContador || isGerencia) && !modulos.some(m => m.codigo === 'retenciones')) {
-      modulos.push({
-          codigo: 'retenciones',
-          nombre: 'Retenciones',
-          ruta: '/retenciones'
-      });
-  }
-
-  // Ensure Gestion Coordinaciones Module is available
-  if ((isAdmin || isGerencia) && !modulos.some(m => m.codigo === 'gestion_coordinaciones')) {
-      modulos.push({
-          codigo: 'gestion_coordinaciones',
-          nombre: 'Gestión Coordinaciones',
-          ruta: '/gestion-coordinaciones'
-      });
-  }
-
-  if (!modulos.some(m => m.codigo === 'alquileres')) {
-      modulos.push({
-          codigo: 'alquileres',
-          nombre: 'Alquileres',
-          ruta: '/alquileres'
-      });
-  }
 
   // Filter out 'comprobantes' as per previous request
   const displayModulos = modulos.filter(modulo => modulo.codigo !== 'comprobantes');
@@ -215,7 +93,8 @@ const Layout = ({ children }) => {
             if (!token) return;
 
             const response = await axios.get(`${API_URL}empresa.php`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                _suppressForbiddenToast: true
             });
 
             if (response.data) {
@@ -327,7 +206,6 @@ const Layout = ({ children }) => {
       case 'Monitor': return <Monitor size={20} />;
       case 'CheckCircle': return <CheckCircle size={20} />;
       case 'UserCheck': return <UserCheck size={20} />;
-      case 'gestion_iso': return <ClipboardList size={20} />;
       case 'retenciones': return <FileText size={20} />;
       case 'gestion_coordinaciones': return <Briefcase size={20} />;
       case 'Users': return <Users size={20} />;

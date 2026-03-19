@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../api/config';
 import { 
@@ -34,7 +34,9 @@ const SearchModal = ({ isOpen, onClose, type, onSelect }) => {
         setLoading(true);
         try {
             const endpoint = type === 'product' ? 'buscar_productos' : 'buscar_clientes';
-            const res = await axios.get(`${API_URL}facturacion.php?action=${endpoint}&q=${term}`);
+            const token = localStorage.getItem('token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            const res = await axios.get(`${API_URL}facturacion.php?action=${endpoint}&q=${term}`, { headers });
             setResults(res.data);
         } catch (error) {
             console.error("Error buscando", error);
@@ -210,7 +212,9 @@ const FacturacionElectronica = () => {
     const headers = { Authorization: `Bearer ${token}` };
 
     const location = useLocation();
+    const navigate = useNavigate();
     const targetSerieRef = useRef(null);
+    const lastAutoEditIdRef = useRef(null);
 
     // Refs para control de regeneración de cuotas
     const prevMontoBaseRef = useRef(0);
@@ -327,6 +331,28 @@ const FacturacionElectronica = () => {
         };
         fetchInvoiceDetails();
     };
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const editId = params.get('edit');
+        if (!editId) return;
+        if (lastAutoEditIdRef.current === editId) return;
+        lastAutoEditIdRef.current = editId;
+
+        const fetchAndEdit = async () => {
+            const toastId = toast.loading("Cargando venta...");
+            try {
+                const res = await axios.get(`${API_URL}facturacion.php?action=obtener_cabecera&id=${editId}`, { headers });
+                handleEditInvoice(res.data);
+                navigate({ pathname: location.pathname }, { replace: true });
+                toast.success("Venta lista para editar", { id: toastId });
+            } catch (error) {
+                toast.error(error.response?.data?.message || "No se pudo cargar la venta", { id: toastId });
+            }
+        };
+
+        fetchAndEdit();
+    }, [location.pathname, location.search]);
 
     const handleDuplicateInvoice = (invoice) => {
         setActiveTab('emision');
@@ -1617,7 +1643,7 @@ const FacturacionElectronica = () => {
                                                         >
                                                             <Copy size={18} />
                                                         </button>
-                                                        {item.estado === 'Generado' && (
+                                                        {(item.estado === 'Generado' || item.estado === 'Borrador') && (
                                                             <button 
                                                                 onClick={() => handleEditInvoice(item)}
                                                                 className="text-gray-600 hover:text-amber-600 p-1.5 rounded-full hover:bg-amber-50 transition-colors"
@@ -1726,7 +1752,7 @@ const FacturacionElectronica = () => {
                                             <div className="flex gap-2">
                                                 <button onClick={() => handleViewData(item)} className="p-2 bg-gray-50 text-teal-600 rounded-lg"><Eye size={20} /></button>
                                                 <button onClick={() => handleDuplicateInvoice(item)} className="p-2 bg-gray-50 text-blue-600 rounded-lg" title="Duplicar"><Copy size={20} /></button>
-                                                {item.estado === 'Generado' && (
+                                                {(item.estado === 'Generado' || item.estado === 'Borrador') && (
                                                     <button onClick={() => handleEditInvoice(item)} className="p-2 bg-gray-50 text-amber-600 rounded-lg" title="Editar">
                                                         <Edit size={20} />
                                                     </button>

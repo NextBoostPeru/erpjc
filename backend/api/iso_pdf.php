@@ -1,11 +1,25 @@
 <?php
 require_once '../vendor/autoload.php';
 require_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
 $type = $_GET['type'] ?? 'audit';
+
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$token = $token ?: ($_REQUEST['token'] ?? '');
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    header("Content-Type: application/json; charset=UTF-8");
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
 
 try {
     $html = '';
@@ -416,33 +430,40 @@ try {
                 }
                 $html .= '</tbody></table>';
                 
-                // Coordinaciones del cliente (en base a RUC o Nombre)
-                $empresaRuc = $items[0]['empresa_ruc'] ?? null;
-                $empresaNombre = $items[0]['empresa'] ?? null;
+                $empresaId = $items[0]['empresa_id'] ?? null;
                 $coordParams = [];
                 $coordSql = "
                     SELECT c.fecha, c.tipo, c.detalle, c.estado, u.usuario
-                    FROM gestion_coordinaciones c
-                    JOIN clientes cl ON c.cliente_id = cl.id
+                    FROM iso_coordinaciones c
                     LEFT JOIN usuarios u ON u.id = c.usuario_id
                     WHERE 1=1
                 ";
-                if ($empresaRuc) {
-                    $coordSql .= " AND cl.num_doc = ? ";
-                    $coordParams[] = $empresaRuc;
+                $conn->exec("CREATE TABLE IF NOT EXISTS iso_coordinaciones (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    empresa_id INT NOT NULL,
+                    usuario_id INT NOT NULL,
+                    fecha DATETIME NOT NULL,
+                    tipo VARCHAR(50) NOT NULL,
+                    detalle TEXT,
+                    estado VARCHAR(20) DEFAULT 'Completado',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_empresa (empresa_id),
+                    INDEX idx_usuario (usuario_id),
+                    INDEX idx_fecha (fecha),
+                    FOREIGN KEY (empresa_id) REFERENCES iso_empresas(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+                if ($empresaId) {
+                    $coordSql .= " AND c.empresa_id = ? ";
+                    $coordParams[] = (int)$empresaId;
                 } else {
-                    $coordSql .= " AND cl.razon_social = ? ";
-                    $coordParams[] = $empresaNombre;
+                    $coordSql .= " AND 1=0 ";
                 }
                 if ($date_from && $date_to) {
                     $coordSql .= " AND DATE(c.fecha) BETWEEN ? AND ? ";
                     $coordParams[] = $date_from;
                     $coordParams[] = $date_to;
-                }
-                if (!empty($usuario_ids)) {
-                    $in = implode(',', array_fill(0, count($usuario_ids), '?'));
-                    $coordSql .= " AND c.usuario_id IN ($in) ";
-                    $coordParams = array_merge($coordParams, $usuario_ids);
                 }
                 $coordSql .= " ORDER BY c.fecha DESC";
                 $stmtCoord = $conn->prepare($coordSql);
@@ -450,7 +471,7 @@ try {
                 $coordinaciones = $stmtCoord->fetchAll(PDO::FETCH_ASSOC);
                 
                 if (count($coordinaciones) > 0) {
-                    $html .= '<div style="margin-top:10px; font-weight:bold;">Coordinaciones del Cliente</div>';
+                    $html .= '<div style="margin-top:10px; font-weight:bold;">Coordinaciones (Gestión ISO)</div>';
                     $html .= '<table class="rb-table" style="margin-top:4px;"><thead><tr>
                         <th width="12%">Fecha</th>
                         <th width="14%">Usuario</th>
@@ -469,7 +490,7 @@ try {
                     }
                     $html .= '</tbody></table>';
                 } else {
-                    $html .= '<div style="margin-top:8px; font-size:9px; color:#666;">No hay coordinaciones registradas en el periodo para este cliente.</div>';
+                    $html .= '<div style="margin-top:8px; font-size:9px; color:#666;">No hay coordinaciones registradas en el periodo para esta empresa.</div>';
                 }
             }
         }
@@ -799,7 +820,7 @@ try {
 
     } else {
         // ... Original Audit Logic ...
-        $id = $_GET['id'] ?? 0;
+        $id = (int)($_REQUEST['id'] ?? 0);
         if (!$id) die("Audit ID required");
         
         $stmt = $conn->prepare("SELECT a.*, c.nombre as checklist_nombre, c.codigo FROM iso_audits a JOIN iso_checklists c ON a.checklist_id = c.id WHERE a.id = ?");

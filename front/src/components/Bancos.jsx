@@ -11,7 +11,7 @@ import {
     Landmark, Plus, ArrowUpRight, ArrowDownLeft, Repeat, 
     FileText, CheckCircle, X, ArrowLeft, Loader, Search,
     Wallet, CreditCard, DollarSign, Calendar, FileSpreadsheet, User as UserIcon,
-    Edit2, Trash2
+    Edit2, Trash2, ChevronLeft, ChevronRight
  } from 'lucide-react';
 
 const isBancoNacion = (nombre) => {
@@ -29,6 +29,12 @@ const Bancos = () => {
     const [loading, setLoading] = useState(false);
     const [pcge, setPcge] = useState([]);
     const [searchMovimiento, setSearchMovimiento] = useState('');
+    const [debouncedSearchMovimiento, setDebouncedSearchMovimiento] = useState('');
+    const [movPage, setMovPage] = useState(1);
+    const movLimit = 20;
+    const [movTotalPages, setMovTotalPages] = useState(1);
+    const [movTotal, setMovTotal] = useState(0);
+    const [movReloadKey, setMovReloadKey] = useState(0);
 
     const [selectedMovimientos, setSelectedMovimientos] = useState([]);
 
@@ -52,22 +58,57 @@ const Bancos = () => {
         if (!v) return '';
         return `${v.replace('T', ' ')}:00`;
     };
+    const parseMoney = (value) => {
+        const raw = String(value ?? '').trim();
+        if (!raw) return null;
+        let s = raw.replace(/[^\d.,-]/g, '').replace(/\s/g, '');
+        const hasComma = s.includes(',');
+        const hasDot = s.includes('.');
+        if (hasComma && hasDot) {
+            const lastComma = s.lastIndexOf(',');
+            const lastDot = s.lastIndexOf('.');
+            if (lastComma > lastDot) {
+                s = s.replace(/\./g, '').replace(',', '.');
+            } else {
+                s = s.replace(/,/g, '');
+            }
+        } else if (hasComma) {
+            s = s.replace(/\./g, '').replace(',', '.');
+        }
+        const n = Number(s);
+        return Number.isFinite(n) ? n : null;
+    };
 
     useEffect(() => {
         fetchCuentas();
         fetchPCGE();
     }, []);
 
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setDebouncedSearchMovimiento(searchMovimiento);
+            setMovPage(1);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [searchMovimiento]);
+
     const fetchCuentas = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${API_URL}/bancos.php?action=listar_cuentas`, {
+            const res = await axios.get(`${API_URL}bancos.php?action=listar_cuentas`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setCuentas(Array.isArray(res.data) ? res.data : []);
+            const list = Array.isArray(res.data) ? res.data : [];
+            setCuentas(list);
+            if (selectedCuenta?.id) {
+                const updated = list.find(c => String(c.id) === String(selectedCuenta.id));
+                if (updated) setSelectedCuenta(updated);
+            }
+            return list;
         } catch (error) {
             console.error(error);
             toast.error('Error al cargar cuentas');
+            return [];
         } finally {
             setLoading(false);
         }
@@ -75,7 +116,7 @@ const Bancos = () => {
 
     const fetchPCGE = async () => {
         try {
-            const res = await axios.get(`${API_URL}/caja.php?action=get_pcge`, {
+            const res = await axios.get(`${API_URL}caja.php?action=get_pcge`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setPcge(Array.isArray(res.data) ? res.data : []);
@@ -85,10 +126,28 @@ const Bancos = () => {
     const fetchMovimientos = async (cuentaId) => {
         setLoading(true);
         try {
-            const res = await axios.get(`${API_URL}/bancos.php?action=listar_movimientos&cuenta_id=${cuentaId}`, {
+            const res = await axios.get(`${API_URL}bancos.php`, {
+                params: {
+                    action: 'listar_movimientos',
+                    cuenta_id: cuentaId,
+                    page: movPage,
+                    limit: movLimit,
+                    search: debouncedSearchMovimiento || undefined
+                },
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setMovimientos(Array.isArray(res.data) ? res.data : []);
+            if (Array.isArray(res.data)) {
+                setMovimientos(res.data);
+                setMovTotal(res.data.length);
+                setMovTotalPages(1);
+            } else {
+                setMovimientos(Array.isArray(res.data?.data) ? res.data.data : []);
+                const pagination = res.data?.pagination || {};
+                setMovTotal(Number(pagination.total || 0));
+                setMovTotalPages(Number(pagination.totalPages || 1));
+                const serverPage = Number(pagination.page || movPage);
+                if (Number.isFinite(serverPage) && serverPage !== movPage) setMovPage(serverPage);
+            }
             setSelectedMovimientos([]);
         } catch (error) {
             console.error(error);
@@ -98,20 +157,34 @@ const Bancos = () => {
         }
     };
 
+    useEffect(() => {
+        if (view !== 'detalle' || !selectedCuenta?.id) return;
+        fetchMovimientos(selectedCuenta.id);
+    }, [view, selectedCuenta?.id, movPage, debouncedSearchMovimiento, movReloadKey]);
+
     const handleSelectCuenta = (cuenta) => {
         setSelectedCuenta(cuenta);
         setView('detalle');
-        fetchMovimientos(cuenta.id);
+        setMovPage(1);
+        setSearchMovimiento('');
+        setDebouncedSearchMovimiento('');
+        setMovTotalPages(1);
+        setMovTotal(0);
+        setMovReloadKey(k => k + 1);
     };
 
     const handleCrearCuenta = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API_URL}/bancos.php?action=crear_cuenta`, cuentaForm, {
+            const payload = {
+                ...cuentaForm,
+                saldo_inicial: parseMoney(cuentaForm.saldo_inicial) ?? 0
+            };
+            await axios.post(`${API_URL}bancos.php?action=crear_cuenta`, payload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setActiveModal(null);
-            fetchCuentas();
+            await fetchCuentas();
             toast.success('Cuenta creada exitosamente');
             setCuentaForm({ nombre_banco: '', numero_cuenta: '', tipo_cuenta: 'Corriente', moneda: 'PEN', saldo_inicial: 0, cuenta_contable: '', cci: '', titular: '', mostrar_en_pdf: false });
         } catch (error) { toast.error('Error al crear cuenta'); }
@@ -120,14 +193,16 @@ const Bancos = () => {
     const handleEditarCuenta = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API_URL}/bancos.php?action=editar_cuenta`, { ...cuentaForm, id: selectedCuenta.id }, {
+            const payload = {
+                ...cuentaForm,
+                id: selectedCuenta.id,
+                saldo_inicial: parseMoney(cuentaForm.saldo_inicial) ?? 0
+            };
+            await axios.post(`${API_URL}bancos.php?action=editar_cuenta`, payload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setActiveModal(null);
-            fetchCuentas();
-            
-            // Actualizar la cuenta seleccionada con los nuevos datos
-            setSelectedCuenta({ ...selectedCuenta, ...cuentaForm });
+            await fetchCuentas();
             
             toast.success('Cuenta actualizada exitosamente');
             setCuentaForm({ nombre_banco: '', numero_cuenta: '', tipo_cuenta: 'Corriente', moneda: 'PEN', saldo_inicial: 0, cuenta_contable: '', cci: '', titular: '', mostrar_en_pdf: false });
@@ -139,7 +214,7 @@ const Bancos = () => {
         if (!window.confirm(`¿Estás seguro de que deseas eliminar la cuenta ${selectedCuenta.nombre_banco}? Esta acción no se puede deshacer.`)) return;
 
         try {
-            await axios.post(`${API_URL}/bancos.php?action=eliminar_cuenta`, { id: selectedCuenta.id }, {
+            await axios.post(`${API_URL}bancos.php?action=eliminar_cuenta`, { id: selectedCuenta.id }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             toast.success('Cuenta eliminada correctamente');
@@ -169,13 +244,14 @@ const Bancos = () => {
 
     const handleRegistrarMovimiento = async (e) => {
         e.preventDefault();
-        if(!movForm.monto || movForm.monto <= 0) return toast.error("Monto inválido");
+        const montoValue = parseMoney(movForm.monto);
+        if (montoValue === null || montoValue <= 0) return toast.error("Monto inválido");
 
         try {
             if (movForm.id) {
                 const payload = {
                     id: movForm.id,
-                    monto: movForm.monto,
+                    monto: montoValue,
                     concepto: movForm.concepto,
                     referencia: movForm.referencia,
                     entidad: movForm.entidad,
@@ -184,23 +260,27 @@ const Bancos = () => {
                 if (movForm.fecha) {
                     payload.fecha = toServerDateTime(movForm.fecha);
                 }
-                await axios.post(`${API_URL}/bancos.php?action=editar_movimiento`, payload, { headers: { Authorization: `Bearer ${token}` } });
+                await axios.post(`${API_URL}bancos.php?action=editar_movimiento`, payload, { headers: { Authorization: `Bearer ${token}` } });
                 toast.success('Movimiento actualizado');
             } else {
-                const payload = { ...movForm, cuenta_id: selectedCuenta.id };
-                if (payload.fecha) {
-                    payload.fecha = toServerDateTime(payload.fecha);
-                }
-                await axios.post(`${API_URL}/bancos.php?action=registrar_movimiento`, payload, { headers: { Authorization: `Bearer ${token}` } });
+                const payload = {
+                    cuenta_id: selectedCuenta.id,
+                    tipo: movForm.tipo,
+                    origen_destino: movForm.origen_destino,
+                    monto: montoValue,
+                    concepto: movForm.concepto,
+                    referencia: movForm.referencia,
+                    entidad: movForm.entidad,
+                    cuenta_contable: movForm.cuenta_contable
+                };
+                if (movForm.fecha) payload.fecha = toServerDateTime(movForm.fecha);
+                await axios.post(`${API_URL}bancos.php?action=registrar_movimiento`, payload, { headers: { Authorization: `Bearer ${token}` } });
                 toast.success('Movimiento registrado');
             }
             setActiveModal(null);
-            fetchMovimientos(selectedCuenta.id);
-            // Actualizar saldo de la cuenta seleccionada localmente o recargar cuentas
-            fetchCuentas(); 
-            // Actualizar selectedCuenta con el nuevo saldo (opcional, pero mejor recargar)
-            const updatedCuenta = cuentas.find(c => c.id === selectedCuenta.id);
-            if(updatedCuenta) setSelectedCuenta(updatedCuenta);
+            if (!movForm.id) setMovPage(1);
+            setMovReloadKey(k => k + 1);
+            await fetchCuentas();
 
             setMovForm({ id: null, tipo: 'Ingreso', monto: '', concepto: '', referencia: '', entidad: '', cuenta_contable: '', origen_destino: '', fecha: '' });
         } catch (error) { toast.error('Error: ' + (error.response?.data?.message || 'Error desconocido')); }
@@ -208,8 +288,9 @@ const Bancos = () => {
 
     const handleTransferencia = async (e) => {
         e.preventDefault();
-        if(!transfForm.monto || transfForm.monto <= 0) return toast.error("Monto inválido");
-        if(parseFloat(transfForm.monto) > parseFloat(selectedCuenta.saldo_actual)) return toast.error("Saldo insuficiente");
+        const montoValue = parseMoney(transfForm.monto);
+        if (montoValue === null || montoValue <= 0) return toast.error("Monto inválido");
+        if (montoValue > parseFloat(selectedCuenta.saldo_actual)) return toast.error("Saldo insuficiente");
 
         try {
             const destino = cuentas.find(c => c.id == transfForm.cuenta_destino_id);
@@ -217,15 +298,15 @@ const Bancos = () => {
                 ...transfForm,
                 cuenta_origen: selectedCuenta.id,
                 cuenta_origen_nombre: selectedCuenta.nombre_banco,
-                cuenta_destino_nombre: destino ? destino.nombre_banco : 'Externo'
+                cuenta_destino_nombre: destino ? destino.nombre_banco : 'Externo',
+                monto: montoValue
             };
-            if (payload.fecha) {
-                payload.fecha = toServerDateTime(payload.fecha);
-            }
-            await axios.post(`${API_URL}/bancos.php?action=transferencia`, payload, { headers: { Authorization: `Bearer ${token}` } });
+            if (transfForm.fecha) payload.fecha = toServerDateTime(transfForm.fecha);
+            await axios.post(`${API_URL}bancos.php?action=transferencia`, payload, { headers: { Authorization: `Bearer ${token}` } });
             setActiveModal(null);
-            fetchMovimientos(selectedCuenta.id);
-            fetchCuentas();
+            setMovPage(1);
+            setMovReloadKey(k => k + 1);
+            await fetchCuentas();
             toast.success('Transferencia realizada');
             setTransfForm({ cuenta_destino_id: '', monto: '', concepto: '', referencia: '', fecha: '' });
         } catch (error) { toast.error('Error al transferir'); }
@@ -234,13 +315,19 @@ const Bancos = () => {
     const handleEmitirCheque = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API_URL}/bancos.php?action=emitir_cheque`, {
+            const montoValue = parseMoney(chequeForm.monto);
+            if (montoValue === null || montoValue <= 0) return toast.error("Monto inválido");
+            await axios.post(`${API_URL}bancos.php?action=emitir_cheque`, {
                 ...chequeForm,
+                monto: montoValue,
+                fecha_emision: chequeForm.fecha_emision || null,
+                fecha_pago: chequeForm.fecha_pago || null,
                 cuenta_id: selectedCuenta.id
             }, { headers: { Authorization: `Bearer ${token}` } });
             setActiveModal(null);
-            fetchMovimientos(selectedCuenta.id);
-            fetchCuentas();
+            setMovPage(1);
+            setMovReloadKey(k => k + 1);
+            await fetchCuentas();
             toast.success('Cheque emitido');
             setChequeForm({ numero_cheque: '', beneficiario: '', monto: '', fecha_emision: '', fecha_pago: '' });
         } catch (error) { toast.error('Error al emitir cheque'); }
@@ -251,10 +338,10 @@ const Bancos = () => {
         if (!window.confirm('¿Conciliar movimientos seleccionados?')) return;
         
         try {
-            await axios.post(`${API_URL}/bancos.php?action=conciliar`, {
+            await axios.post(`${API_URL}bancos.php?action=conciliar`, {
                 ids: selectedMovimientos
             }, { headers: { Authorization: `Bearer ${token}` } });
-            fetchMovimientos(selectedCuenta.id);
+            setMovReloadKey(k => k + 1);
             toast.success('Movimientos conciliados');
             setSelectedMovimientos([]);
         } catch (error) { toast.error('Error al conciliar'); }
@@ -273,7 +360,7 @@ const Bancos = () => {
     };
 
     const handleExportExcel = () => {
-        const dataToExport = filteredMovimientos.map(m => ({
+        const dataToExport = movimientos.map(m => ({
             Fecha: new Date(m.fecha).toLocaleDateString(),
             Hora: new Date(m.fecha).toLocaleTimeString(),
             Concepto: m.concepto,
@@ -298,11 +385,7 @@ const Bancos = () => {
         }));
     }, [cuentas]);
 
-    const filteredMovimientos = movimientos.filter(m => 
-        (m.concepto || '').toLowerCase().includes(searchMovimiento.toLowerCase()) ||
-        (m.referencia && m.referencia.toLowerCase().includes(searchMovimiento.toLowerCase())) ||
-        (m.entidad && m.entidad.toLowerCase().includes(searchMovimiento.toLowerCase()))
-    );
+    const filteredMovimientos = movimientos;
 
     return (
         <div className="p-4 md:p-6 fade-in max-w-7xl mx-auto">
@@ -611,11 +694,11 @@ const Bancos = () => {
                                                                 onClick={async () => {
                                                                     if (!window.confirm('¿Eliminar este movimiento? Esta acción ajustará el saldo de la cuenta.')) return;
                                                                     try {
-                                                                        await axios.post(`${API_URL}/bancos.php?action=eliminar_movimiento`, { id: m.id }, {
+                                                                        await axios.post(`${API_URL}bancos.php?action=eliminar_movimiento`, { id: m.id }, {
                                                                             headers: { Authorization: `Bearer ${token}` }
                                                                         });
-                                                                        fetchMovimientos(selectedCuenta.id);
-                                                                        fetchCuentas();
+                                                                        setMovReloadKey(k => k + 1);
+                                                                        await fetchCuentas();
                                                                         toast.success('Movimiento eliminado');
                                                                     } catch (error) {
                                                                         toast.error(error.response?.data?.message || 'No se pudo eliminar el movimiento');
@@ -632,6 +715,36 @@ const Bancos = () => {
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+                            <div className="text-sm text-gray-600">
+                                Mostrando <span className="font-medium text-gray-800">{filteredMovimientos.length === 0 ? 0 : ((movPage - 1) * movLimit + 1)}</span>
+                                {' '}-{' '}
+                                <span className="font-medium text-gray-800">{(movPage - 1) * movLimit + filteredMovimientos.length}</span>
+                                {' '}de <span className="font-medium text-gray-800">{movTotal}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setMovPage(p => Math.max(1, p - 1))}
+                                    disabled={movPage === 1 || loading}
+                                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg disabled:opacity-50 flex items-center gap-2 hover:bg-gray-50 text-gray-700 font-medium transition-colors shadow-sm"
+                                >
+                                    <ChevronLeft size={18} /> <span className="hidden sm:inline">Anterior</span>
+                                </button>
+                                <span className="text-gray-600 font-medium text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
+                                    Página {movPage} de {movTotalPages}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setMovPage(p => Math.min(movTotalPages, p + 1))}
+                                    disabled={movPage >= movTotalPages || loading}
+                                    className="px-4 py-2 bg-white border border-gray-300 rounded-lg disabled:opacity-50 flex items-center gap-2 hover:bg-gray-50 text-gray-700 font-medium transition-colors shadow-sm"
+                                >
+                                    <span className="hidden sm:inline">Siguiente</span> <ChevronRight size={18} />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

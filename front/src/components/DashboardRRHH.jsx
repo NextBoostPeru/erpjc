@@ -14,10 +14,15 @@ const DashboardRRHH = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const response = await axios.get(`${API_URL}dashboard_rrhh.php`);
+        const response = await axios.get(`${API_URL}dashboard_rrhh.php`, { headers: getAuthHeaders() });
         setStats(response.data);
       } catch (error) {
         console.error("Error cargando dashboard RRHH:", error);

@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? $_GET['action'] : '';
@@ -42,6 +43,18 @@ function getMonthsDays($startDate, $endDate) {
 }
 
 try {
+    $jwtHandler = new JWTHandler();
+    $token = $jwtHandler->getBearerToken();
+    $userData = $jwtHandler->validateToken($token);
+    if (!$userData) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
+    rbac_require($conn, $userData, 'ceses', $method);
+
     switch ($method) {
         case 'GET':
             if ($action === 'list') {

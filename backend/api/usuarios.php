@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
@@ -24,13 +25,12 @@ if (!$userData) {
     exit();
 }
 
-// Optional: Check for admin role if strictly required
-// if ($userData->rol_nombre !== 'Admin') { ... }
-
 $method = $_SERVER['REQUEST_METHOD'];
 $data = json_decode(file_get_contents("php://input"));
 
 try {
+    rbac_require($conn, $userData, 'usuarios', $method);
+
     switch ($method) {
         case 'GET':
             if (isset($_GET['action']) && $_GET['action'] === 'roles') {

@@ -70,15 +70,21 @@ const GestionCoordinaciones = () => {
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [filteredClients, setFilteredClients] = useState([]);
   const [loadingClients, setLoadingClients] = useState(false);
+  const [canManage, setCanManage] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user'));
-  // Robust check for admin/gerencia roles supporting multiple property names (rol, rol_id, rol_nombre)
-  const isAdminOrGerencia = [1, 2, '1', '2', 'admin', 'gerencia', 'administrador', 'gerente'].some(val => 
-    [user?.rol, user?.rol_id, user?.rol_nombre].map(v => String(v).toLowerCase()).includes(String(val).toLowerCase())
-  );
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   useEffect(() => {
-    fetchData();
+    const init = async () => {
+      const manage = await fetchPermissions();
+      await fetchData(manage);
+    };
+    init();
   }, []);
 
   useEffect(() => {
@@ -99,9 +105,7 @@ const GestionCoordinaciones = () => {
         toast.error("Sesión no válida");
         return;
       }
-      const res = await axios.get(`${API_URL}clientes_proveedores.php?type=cliente&search=${encodeURIComponent(query)}&limit=20&_t=${Date.now()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get(`${API_URL}clientes_proveedores.php?type=cliente&search=${encodeURIComponent(query)}&limit=20&_t=${Date.now()}`, { headers: getAuthHeaders() });
       const data = Array.isArray(res.data) ? res.data : (res.data.data || []);
       setFilteredClients(data);
     } catch (error) {
@@ -138,23 +142,63 @@ const GestionCoordinaciones = () => {
     }
   }, [showCoordModal, showAssignModal]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchPermissions = async () => {
     try {
       const token = localStorage.getItem('token');
-      const config = { headers: { Authorization: `Bearer ${token}` } };
+      if (!token) {
+        setCanManage(false);
+        return false;
+      }
+      const isNoPerm = (p) => {
+        const perms = p || {};
+        const fields = ['lectura', 'crear', 'editar', 'eliminacion', 'escritura'];
+        return fields.every((f) => (Number(perms[f] || 0) || 0) === 0);
+      };
 
-      const [coordRes, assignRes, usuariosRes] = await Promise.all([
-        axios.get(`${API_URL}gestion.php?action=get_coordinaciones`, config),
-        axios.get(`${API_URL}gestion.php?action=get_asignaciones`, config),
-        axios.get(`${API_URL}usuarios.php`, config)
-      ]);
+      let p = {};
+      try {
+        const response = await axios.get(`${API_URL}check_my_permissions.php?code=gestion_coordinaciones`, { headers: getAuthHeaders() });
+        p = response.data || {};
+      } catch (e) {
+        p = {};
+      }
 
+      if (isNoPerm(p)) {
+        try {
+          const responseLegacy = await axios.get(`${API_URL}check_my_permissions.php?code=gestion`, { headers: getAuthHeaders() });
+          p = responseLegacy.data || {};
+        } catch (e) {
+          p = {};
+        }
+      }
+
+      const manage = Number(p.editar || 0) === 1 || Number(p.escritura || 0) === 1;
+      setCanManage(manage);
+      return manage;
+    } catch (error) {
+      setCanManage(false);
+      return false;
+    }
+  };
+
+  const fetchData = async (manageFlag = canManage) => {
+    setLoading(true);
+    try {
+      const config = { headers: getAuthHeaders() };
+
+      const coordRes = await axios.get(`${API_URL}gestion.php?action=get_coordinaciones`, config);
       setCoordinaciones(coordRes.data);
-      setAsignaciones(assignRes.data);
-      // setClientes removed to optimize performance - using search instead
-      // Fix: Handle object response for users (data.users)
-      setUsuarios(Array.isArray(usuariosRes.data) ? usuariosRes.data : (usuariosRes.data.users || []));
+      if (manageFlag) {
+        const [assignRes, usuariosRes] = await Promise.all([
+          axios.get(`${API_URL}gestion.php?action=get_asignaciones`, config),
+          axios.get(`${API_URL}usuarios.php`, config)
+        ]);
+        setAsignaciones(assignRes.data);
+        setUsuarios(Array.isArray(usuariosRes.data) ? usuariosRes.data : (usuariosRes.data.users || []));
+      } else {
+        setAsignaciones([]);
+        setUsuarios([]);
+      }
     } catch (error) {
       console.error("Error loading data:", error);
       toast.error("Error al cargar datos");
@@ -174,9 +218,7 @@ const GestionCoordinaciones = () => {
       const endpoint = isEditing ? 'update_coordinacion' : 'create_coordinacion';
       const payload = isEditing ? { ...coordForm, id: editingId } : coordForm;
 
-      await axios.post(`${API_URL}gestion.php?action=${endpoint}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post(`${API_URL}gestion.php?action=${endpoint}`, payload, { headers: getAuthHeaders() });
       toast.success(isEditing ? "Coordinación actualizada exitosamente" : "Coordinación registrada exitosamente");
       setShowCoordModal(false);
       resetCoordForm();
@@ -229,9 +271,7 @@ const GestionCoordinaciones = () => {
     if (!window.confirm('¿Está seguro de eliminar esta coordinación?')) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.get(`${API_URL}gestion.php?action=delete_coordinacion&id=${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.get(`${API_URL}gestion.php?action=delete_coordinacion&id=${id}`, { headers: getAuthHeaders() });
       toast.success("Coordinación eliminada");
       fetchData();
     } catch (error) {
@@ -248,9 +288,7 @@ const GestionCoordinaciones = () => {
     }
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}gestion.php?action=assign_cliente`, assignForm, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post(`${API_URL}gestion.php?action=assign_cliente`, assignForm, { headers: getAuthHeaders() });
       toast.success("Asignación creada exitosamente");
       setShowAssignModal(false);
       setAssignForm({ usuario_id: '', cliente_id: '' });
@@ -265,9 +303,7 @@ const GestionCoordinaciones = () => {
     if (!window.confirm('¿Está seguro de eliminar esta asignación?')) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}gestion.php?action=delete_asignacion`, { id }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.post(`${API_URL}gestion.php?action=delete_asignacion`, { id }, { headers: getAuthHeaders() });
       toast.success("Asignación eliminada");
       fetchData();
     } catch (error) {
@@ -284,9 +320,7 @@ const GestionCoordinaciones = () => {
       await axios.post(`${API_URL}gestion.php?action=update_coordinacion`, {
         ...selectedCoord,
         usuario_id: assignUserForm.usuario_id
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      }, { headers: getAuthHeaders() });
       toast.success("Usuario asignado exitosamente");
       setShowAssignUserModal(false);
       setAssignUserForm({ usuario_id: '' });
@@ -301,9 +335,7 @@ const GestionCoordinaciones = () => {
   const fetchHistory = async (coordId) => {
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_URL}gestion.php?action=get_historial&coordinacion_id=${coordId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get(`${API_URL}gestion.php?action=get_historial&coordinacion_id=${coordId}`, { headers: getAuthHeaders() });
       setHistoryList(res.data);
     } catch (error) {
       console.error("Error loading history:", error);
@@ -320,9 +352,7 @@ const GestionCoordinaciones = () => {
       await axios.post(`${API_URL}gestion.php?action=create_historial_entry`, {
         coordinacion_id: selectedCoordForHistory.id,
         detalle: historyForm.detalle
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      }, { headers: getAuthHeaders() });
       
       toast.success("Entrada agregada al historial");
       setHistoryForm({ detalle: '' });
@@ -383,7 +413,7 @@ const GestionCoordinaciones = () => {
           Gestión de Coordinaciones
         </h1>
         <div className="flex gap-2">
-          {isAdminOrGerencia ? (
+          {canManage ? (
             <>
               <button 
                 onClick={() => handleTabChange('coordinaciones')}
@@ -430,7 +460,7 @@ const GestionCoordinaciones = () => {
                     className="pl-10 border rounded-lg px-3 py-2 w-full"
                   />
                 </div>
-                {isAdminOrGerencia && (
+                {canManage && (
                   <div className="relative flex-1 max-w-xs">
                     <User className="absolute left-3 top-2.5 text-gray-400 w-5 h-5" />
                     <input 
@@ -499,7 +529,7 @@ const GestionCoordinaciones = () => {
                           </span>
                         </td>
                         <td className="p-3 flex gap-2">
-                          {isAdminOrGerencia && (
+                          {canManage && (
                             <button 
                               onClick={() => openAssignUserModal(coord)}
                               className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
@@ -508,7 +538,7 @@ const GestionCoordinaciones = () => {
                               <User size={16} />
                             </button>
                           )}
-                          {(isAdminOrGerencia || String(coord.usuario_id) === String(user.id)) && (
+                          {(canManage || String(coord.usuario_id) === String(user.id)) && (
                             <>
                               <button 
                                 onClick={() => handleEditCoordinacion(coord)}
@@ -545,7 +575,7 @@ const GestionCoordinaciones = () => {
         )}
 
         {/* Asignaciones Tab */}
-        {activeTab === 'asignaciones' && isAdminOrGerencia && (
+        {activeTab === 'asignaciones' && canManage && (
           <div>
             <div className="flex justify-end mb-4">
                <button 
@@ -610,7 +640,7 @@ const GestionCoordinaciones = () => {
             <h2 className="text-xl font-bold mb-4">{isEditing ? 'Editar Coordinación' : 'Nueva Coordinación'}</h2>
             <form onSubmit={handleCreateCoordinacion} className="space-y-4">
               
-              {isAdminOrGerencia && (
+              {canManage && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Usuario (Opcional)</label>
                   <select 
@@ -633,7 +663,7 @@ const GestionCoordinaciones = () => {
                     <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
                     <input 
                       type="text" 
-                      placeholder={isAdminOrGerencia ? "Buscar cliente por nombre o RUC..." : "Buscar entre mis clientes asignados..."}
+                      placeholder={canManage ? "Buscar cliente por nombre o RUC..." : "Buscar entre mis clientes asignados..."}
                       value={clientSearch}
                       onChange={(e) => {
                         setClientSearch(e.target.value);

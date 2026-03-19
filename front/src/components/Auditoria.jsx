@@ -21,12 +21,12 @@ const Auditoria = () => {
     setLoading(true);
     try {
       if (activeTab === 'periodos') {
-        const res = await axios.get(`${API_URL}/periodos.php`, {
+        const res = await axios.get(`${API_URL}periodos.php`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setPeriodos(res.data);
       } else {
-        const res = await axios.get(`${API_URL}/auditoria.php?action=${activeTab}&limit=${filters.limit}`, {
+        const res = await axios.get(`${API_URL}auditoria.php?action=${activeTab}&limit=${filters.limit}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setData(res.data);
@@ -42,7 +42,7 @@ const Auditoria = () => {
   const togglePeriodo = async (id, currentStatus) => {
     const newStatus = currentStatus === 'abierto' ? 'cerrado' : 'abierto';
     try {
-      await axios.put(`${API_URL}/periodos.php`, 
+      await axios.put(`${API_URL}periodos.php`, 
         { id, estado: newStatus },
         { headers: { Authorization: `Bearer ${token}` } }
       );

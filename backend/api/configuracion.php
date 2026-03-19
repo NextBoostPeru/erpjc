@@ -10,6 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -21,6 +22,9 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'configuracion', $method);
 
 // Check if admin
 $stmtRole = $conn->prepare("SELECT nombre FROM roles WHERE id = ?");

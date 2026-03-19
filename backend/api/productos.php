@@ -2,6 +2,7 @@
 include_once '../config/db.php';
 require_once '../config/jwt.php';
 require_once __DIR__ . '/../config/AuditLogger.php';
+require_once '../config/rbac.php';
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -19,12 +20,38 @@ $method = $_SERVER['REQUEST_METHOD'];
 $data = json_decode(file_get_contents("php://input"));
 
 try {
+    $jwtHandler = new JWTHandler();
+    $token = $jwtHandler->getBearerToken();
+    $userData = $jwtHandler->validateToken($token);
+    if (!$userData) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
+    $canFullRead = false;
+    if ($method === 'GET') {
+        try {
+            rbac_ensure_roles_modulos_schema($conn);
+            [, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+            $canFullRead = rbac_can($conn, (int)$rolId, (string)$rolNombre, 'productos', 'lectura');
+        } catch (Throwable $e) {
+            $canFullRead = false;
+        }
+    } else {
+        rbac_require($conn, $userData, 'productos', $method);
+    }
+
     switch ($method) {
         case 'GET':
             $page = isset($_GET['page']) ? (int)$_GET['page'] : null;
             $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
             $search = isset($_GET['search']) ? $_GET['search'] : '';
             $categoria = isset($_GET['categoria']) ? strtolower(trim($_GET['categoria'])) : '';
+            $selectCols = $canFullRead
+                ? "p.*, c.nombre as categoria_nombre, m.nombre as marca_nombre"
+                : "p.id, p.codigo_interno, p.codigo_barras, p.nombre, p.descripcion, p.unidad_medida, p.categoria_id, p.marca_id, p.tipo, p.stock_minimo, p.stock_maximo, p.punto_reposicion, p.maneja_lotes, p.maneja_series, p.maneja_vencimiento, p.precio, p.stock, c.nombre as categoria_nombre, m.nombre as marca_nombre";
 
             if ($page) {
                 $offset = ($page - 1) * $limit;
@@ -52,7 +79,7 @@ try {
                 $total = $stmtCount->fetchColumn();
                 
                 // Fetch Data
-                $sql = "SELECT p.*, c.nombre as categoria_nombre, m.nombre as marca_nombre 
+                $sql = "SELECT $selectCols 
                         FROM productos p
                         LEFT JOIN categorias c ON p.categoria_id = c.id
                         LEFT JOIN marcas m ON p.marca_id = m.id
@@ -85,7 +112,7 @@ try {
                 $categoria = isset($_GET['categoria']) ? strtolower(trim($_GET['categoria'])) : '';
                 
                 if ($search || $categoria) {
-                    $sql = "SELECT p.*, c.nombre as categoria_nombre, m.nombre as marca_nombre 
+                    $sql = "SELECT $selectCols 
                             FROM productos p
                             LEFT JOIN categorias c ON p.categoria_id = c.id
                             LEFT JOIN marcas m ON p.marca_id = m.id
@@ -103,7 +130,7 @@ try {
                     if ($search) $stmt->bindValue(':search', "%$search%");
                     if ($categoria) $stmt->bindValue(':cat', "%$categoria%");
                 } else {
-                    $sql = "SELECT p.*, c.nombre as categoria_nombre, m.nombre as marca_nombre 
+                    $sql = "SELECT $selectCols 
                             FROM productos p
                             LEFT JOIN categorias c ON p.categoria_id = c.id
                             LEFT JOIN marcas m ON p.marca_id = m.id

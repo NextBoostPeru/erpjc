@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 header("Content-Type: application/json");
 
@@ -24,6 +25,27 @@ if (!$userData) {
     echo json_encode(["message" => "Acceso no autorizado"]);
     if (isset($conn)) $conn = null;
     exit;
+}
+
+if ($method !== 'GET') {
+    rbac_ensure_roles_modulos_schema($conn);
+    [, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = in_array(strtoupper($method), ['POST', 'PUT'], true) ? 'editar' : rbac_required_perm_for_request($method);
+
+    if (
+        !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'configuracion', $required)
+        && !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'periodos', $required)
+    ) {
+        http_response_code(403);
+        echo json_encode([
+            "message" => "No tienes permiso para esta acción",
+            "forbidden" => true,
+            "modulo" => "configuracion",
+            "permiso" => $required
+        ]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
 }
 
 switch ($method) {

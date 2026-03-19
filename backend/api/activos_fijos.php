@@ -15,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 try {
     $jwtHandler = new JWTHandler();
@@ -33,6 +34,8 @@ try {
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    rbac_require($conn, $userData, 'activos_fijos', $method);
+
     switch ($method) {
         case 'GET':
             $page = isset($_GET['page']) ? (int)$_GET['page'] : null;

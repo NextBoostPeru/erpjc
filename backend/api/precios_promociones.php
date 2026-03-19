@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -12,6 +13,9 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'precios_promociones', $method);
 
 $action = $_GET['action'] ?? '';
 

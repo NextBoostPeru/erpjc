@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET");
@@ -8,6 +9,18 @@ header("Access-Control-Max-Age: 3600");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
 try {
+    $jwtHandler = new JWTHandler();
+    $token = $jwtHandler->getBearerToken();
+    $userData = $jwtHandler->validateToken($token);
+    if (!$userData) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
+    rbac_require($conn, $userData, 'supervision_inventarios', 'GET', 'lectura');
+
     $action = $_GET['action'] ?? 'dashboard';
     
     // 1. Dashboard Metrics

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $jwt = new JWTHandler();
@@ -13,6 +14,8 @@ if (!$user || empty($user)) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+rbac_require($conn, $user, 'ordenes_trabajo', $method);
 
 function inputJson() {
     return json_decode(file_get_contents("php://input"), true);

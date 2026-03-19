@@ -9,7 +9,16 @@ import GestionPlantillasContratos from './GestionPlantillasContratos';
 
 const GestionContratos = () => {
   const [activeTab, setActiveTab] = useState('contratos'); // 'contratos' or 'plantillas'
+  const [contratosView, setContratosView] = useState('colaboradores'); // 'contratos' | 'colaboradores'
   const [contratos, setContratos] = useState([]);
+  const [colaboradoresList, setColaboradoresList] = useState([]);
+  const [colabListLoading, setColabListLoading] = useState(false);
+  const [colabListPage, setColabListPage] = useState(1);
+  const [colabListTotalPages, setColabListTotalPages] = useState(1);
+  const [colabListTotal, setColabListTotal] = useState(0);
+  const [colabListSearch, setColabListSearch] = useState('');
+  const [colabListLimit, setColabListLimit] = useState(20);
+  const [colabActionLoadingId, setColabActionLoadingId] = useState(null);
   const [colaboradores, setColaboradores] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,6 +31,12 @@ const GestionContratos = () => {
   // Pagination
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [colabPage, setColabPage] = useState(1);
+  const [colabTotalPages, setColabTotalPages] = useState(1);
+  const [colabTotal, setColabTotal] = useState(0);
+  const [colabSearch, setColabSearch] = useState('');
+  const [colabLimit, setColabLimit] = useState(20);
+  const [colabLoading, setColabLoading] = useState(false);
   
   // Stats
   const [expiringCount, setExpiringCount] = useState(0);
@@ -100,9 +115,19 @@ const GestionContratos = () => {
     fetchStats();
   }, [page, searchTerm, filterStatus, filterArea]);
 
+  useEffect(() => {
+    if (activeTab !== 'contratos' || contratosView !== 'colaboradores') return;
+    fetchColaboradoresList();
+  }, [activeTab, contratosView, colabListPage, colabListSearch, colabListLimit]);
+
+  useEffect(() => {
+    if (!modalOpen || currentStep !== 1) return;
+    fetchColaboradores();
+  }, [modalOpen, currentStep, colabPage, colabSearch, colabLimit]);
+
   const fetchStats = async () => {
     try {
-        const response = await axios.get(`${API_URL}contratos.php?action=stats`);
+        const response = await axios.get(`${API_URL}contratos.php?action=stats`, { headers: getAuthHeaders() });
         if (response.data.success) {
             setStats(response.data.data);
         }
@@ -113,7 +138,7 @@ const GestionContratos = () => {
 
   const fetchAreas = async () => {
     try {
-        const response = await axios.get(`${API_URL}contratos.php?action=areas`);
+        const response = await axios.get(`${API_URL}contratos.php?action=areas`, { headers: getAuthHeaders() });
         if (response.data.success) {
             setAreas(response.data.data);
         }
@@ -122,15 +147,20 @@ const GestionContratos = () => {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async ({ pageOverride } = {}) => {
     try {
-      const response = await axios.get(`${API_URL}/contratos.php?page=${page}&search=${searchTerm}&status=${filterStatus}&area=${filterArea}`);
+      setLoading(true);
+      const effectivePage = pageOverride ?? page;
+      const response = await axios.get(
+        `${API_URL}contratos.php?page=${encodeURIComponent(effectivePage)}&search=${encodeURIComponent(searchTerm)}&status=${encodeURIComponent(filterStatus)}&area=${encodeURIComponent(filterArea)}`,
+        { headers: getAuthHeaders() }
+      );
       setContratos(response.data.data);
       if (response.data.pagination) {
         setTotalPages(response.data.pagination.totalPages);
       }
       
-      const alertRes = await axios.get(`${API_URL}/contratos.php?alerts=true&limit=1000`);
+      const alertRes = await axios.get(`${API_URL}contratos.php?alerts=true&limit=1000`, { headers: getAuthHeaders() });
       setExpiringCount(alertRes.data.pagination.total);
 
     } catch (error) {
@@ -140,11 +170,32 @@ const GestionContratos = () => {
       setLoading(false);
     }
   };
+
+  const fetchColaboradoresList = async () => {
+    try {
+      setColabListLoading(true);
+      const res = await axios.get(
+        `${API_URL}colaboradores.php?page=${colabListPage}&limit=${colabListLimit}&search=${encodeURIComponent(colabListSearch)}`,
+        { headers: getAuthHeaders() }
+      );
+      const list = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+      setColaboradoresList(list);
+      setColabListTotalPages(res.data?.pagination?.totalPages || 1);
+      setColabListTotal(res.data?.pagination?.total || 0);
+    } catch (error) {
+      console.error("Error fetching colaboradores list:", error);
+      setColaboradoresList([]);
+      setColabListTotalPages(1);
+      setColabListTotal(0);
+    } finally {
+      setColabListLoading(false);
+    }
+  };
   
   const fetchSignature = async () => {
     try {
       setSigLoading(true);
-      const res = await axios.get(`${API_URL}contratos.php?action=get_signature`);
+      const res = await axios.get(`${API_URL}contratos.php?action=get_signature`, { headers: getAuthHeaders() });
       if (res.data && res.data.exists) {
         setSigPath(res.data.path);
       } else {
@@ -164,12 +215,105 @@ const GestionContratos = () => {
   const fetchRoles = async () => {
     try {
       // Fetch roles from usuarios.php
-      const response = await axios.get(`${API_URL}usuarios.php`);
+      const response = await axios.get(`${API_URL}usuarios.php`, { headers: getAuthHeaders() });
       if (response.data.roles) {
           setRoles(response.data.roles);
       }
     } catch (error) {
       console.error("Error fetching roles:", error);
+    }
+  };
+
+  const fetchColaboradores = async () => {
+    try {
+      setColabLoading(true);
+      const res = await axios.get(
+        `${API_URL}colaboradores.php?page=${colabPage}&limit=${colabLimit}&search=${encodeURIComponent(colabSearch)}`,
+        { headers: getAuthHeaders() }
+      );
+      const list = Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+      setColaboradores(list);
+      setColabTotalPages(res.data?.pagination?.totalPages || 1);
+      setColabTotal(res.data?.pagination?.total || 0);
+    } catch (error) {
+      console.error("Error fetching colaboradores:", error);
+      setColaboradores([]);
+      setColabTotalPages(1);
+      setColabTotal(0);
+    } finally {
+      setColabLoading(false);
+    }
+  };
+
+  const seleccionarColaborador = (c) => {
+    setFormData(prev => ({
+      ...prev,
+      colaborador_id: c.id || '',
+      dni: c.documento_numero || '',
+      nombres: c.nombres || '',
+      apellidos: c.apellidos || '',
+      direccion: c.direccion || '',
+      correo: c.email || '',
+      celular: c.telefono || '',
+      rol_id: c.rol_id || prev.rol_id || '',
+      cargo: c.cargo || prev.cargo || '',
+      area: c.area || prev.area || '',
+      asignacion_familiar: c.asignacion_familiar ? 1 : 0
+    }));
+  };
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const openContratoPDF = (contrato) => {
+    if (!contrato?.archivo_url) {
+      toast.error("Este contrato no tiene PDF");
+      return;
+    }
+    const url = `${API_URL.replace(/\/$/, '')}${contrato.archivo_url}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const fetchLatestContratoByColaborador = async (colaboradorId) => {
+    const res = await axios.get(
+      `${API_URL}contratos.php?colaborador_id=${encodeURIComponent(colaboradorId)}&page=1&limit=1`,
+      { headers: getAuthHeaders() }
+    );
+    const list = Array.isArray(res.data?.data) ? res.data.data : [];
+    return list[0] || null;
+  };
+
+  const handleColaboradorContratoAction = async (colaboradorId, action) => {
+    try {
+      setColabActionLoadingId(colaboradorId);
+      const contrato = await fetchLatestContratoByColaborador(colaboradorId);
+      if (!contrato) {
+        toast.error("Este colaborador no tiene contrato registrado");
+        return;
+      }
+
+      if (action === 'pdf') {
+        openContratoPDF(contrato);
+        return;
+      }
+      if (action === 'edit') {
+        handleEdit(contrato);
+        return;
+      }
+      if (action === 'renew') {
+        handleRenew(contrato);
+        return;
+      }
+      if (action === 'delete') {
+        handleDelete(contrato.id);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("No se pudo cargar el contrato del colaborador");
+    } finally {
+      setColabActionLoadingId(null);
     }
   };
 
@@ -219,7 +363,7 @@ const GestionContratos = () => {
           // Wait, the backend `colaboradores.php` returns 400 if DNI exists.
           
           // Let's first try to find if this DNI already exists in our DB to update it instead of failing
-          const searchRes = await axios.get(`${API_URL}colaboradores.php?search=${formData.dni}`);
+          const searchRes = await axios.get(`${API_URL}colaboradores.php?search=${formData.dni}`, { headers: getAuthHeaders() });
           const existing = searchRes.data.data.find(c => c.documento_numero === formData.dni);
           
           let colabId = null;
@@ -241,7 +385,7 @@ const GestionContratos = () => {
                   // We don't update user/password here easily without more logic, 
                   // but requirements say "create user automatically". 
                   // If exists, user might already exist.
-              });
+              }, { headers: getAuthHeaders() });
               toast.success("Colaborador actualizado");
           } else {
               // Create new
@@ -254,7 +398,7 @@ const GestionContratos = () => {
                     email: formData.correo,
                     rol_id: formData.rol_id,
                     fecha_ingreso: new Date().toISOString().split('T')[0] // Default to today
-                });
+                }, { headers: getAuthHeaders() });
                 colabId = createRes.data.id;
                 
                 toast.success("Colaborador registrado");
@@ -293,8 +437,9 @@ const GestionContratos = () => {
                 horas_trabajo: formData.horas_trabajo,
                 dni: formData.dni,
                 nombres: formData.nombres,
+                apellidos: formData.apellidos,
                 direccion: formData.direccion
-            });
+            }, { headers: getAuthHeaders() });
 
             toast.dismiss(loadingToast);
             
@@ -319,9 +464,9 @@ const GestionContratos = () => {
         await axios.post(`${API_URL}contratos.php?action=sign`, {
             id,
             role
-        });
+        }, { headers: getAuthHeaders() });
         toast.success("Contrato firmado correctamente");
-        fetchData();
+        await Promise.all([fetchData(), fetchStats()]);
     } catch (error) {
         toast.error("Error al firmar contrato");
     }
@@ -331,9 +476,9 @@ const GestionContratos = () => {
     if (!window.confirm('¿Está seguro de eliminar este contrato? Esta acción no se puede deshacer.')) return;
 
     try {
-        await axios.delete(`${API_URL}contratos.php?id=${id}`);
+        await axios.delete(`${API_URL}contratos.php?id=${id}`, { headers: getAuthHeaders() });
         toast.success("Contrato eliminado correctamente");
-        fetchData();
+        await Promise.all([fetchData(), fetchStats()]);
     } catch (error) {
         console.error(error);
         toast.error(error.response?.data?.message || "Error al eliminar contrato");
@@ -366,12 +511,13 @@ const GestionContratos = () => {
 
     try {
       await axios.post(`${API_URL}contratos.php`, data, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
       });
       toast.success(editingId ? "Contrato actualizado" : "Contrato registrado");
       setModalOpen(false);
       resetForm();
-      fetchData();
+      setPage(1);
+      await Promise.all([fetchData({ pageOverride: 1 }), fetchStats(), fetchAreas()]);
     } catch (error) {
       toast.error(error.response?.data?.message || "Error al guardar");
     }
@@ -413,7 +559,7 @@ const GestionContratos = () => {
 
     // Fetch full collaborator details
     try {
-        const response = await axios.get(`${API_URL}colaboradores.php?search=${item.documento_numero}`);
+        const response = await axios.get(`${API_URL}colaboradores.php?search=${item.documento_numero}`, { headers: getAuthHeaders() });
         if (response.data.data) {
             const colab = response.data.data.find(c => c.documento_numero === item.documento_numero);
             if (colab) {
@@ -469,7 +615,7 @@ const GestionContratos = () => {
 
     // Fetch full collaborator details
     try {
-        const response = await axios.get(`${API_URL}colaboradores.php?search=${item.documento_numero}`);
+        const response = await axios.get(`${API_URL}colaboradores.php?search=${item.documento_numero}`, { headers: getAuthHeaders() });
         if (response.data.data) {
             const colab = response.data.data.find(c => c.documento_numero === item.documento_numero);
             if (colab) {
@@ -516,7 +662,7 @@ const GestionContratos = () => {
             dni: item.documento_numero
         };
         
-        const genRes = await axios.post(`${API_URL}contratos.php?action=generate`, genPayload);
+        const genRes = await axios.post(`${API_URL}contratos.php?action=generate`, genPayload, { headers: getAuthHeaders() });
         
         if (genRes.data && genRes.data.filename) {
             // 2. Update record with new filename
@@ -535,7 +681,9 @@ const GestionContratos = () => {
             updatePayload.append('horas_trabajo', item.horas_trabajo || '');
             updatePayload.append('generated_filename', genRes.data.filename);
             
-            await axios.post(`${API_URL}contratos.php`, updatePayload);
+            await axios.post(`${API_URL}contratos.php`, updatePayload, {
+                headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+            });
             
             toast.success('PDF regenerado correctamente', { id: toastId });
             fetchData();
@@ -560,6 +708,28 @@ const GestionContratos = () => {
     setEditingId(null);
     setFilePreview(null);
     setCurrentStep(1);
+  };
+
+  const openContratoParaColaborador = (c) => {
+    setEditingId(null);
+    setFilePreview(null);
+    setSubmitRequested(false);
+    setFormData(prev => ({
+      ...initialFormState,
+      colaborador_id: c.id || '',
+      dni: c.documento_numero || '',
+      nombres: c.nombres || '',
+      apellidos: c.apellidos || '',
+      direccion: c.direccion || '',
+      correo: c.email || '',
+      celular: c.telefono || '',
+      rol_id: c.rol_id || '',
+      cargo: c.cargo || '',
+      area: c.area || '',
+      asignacion_familiar: c.asignacion_familiar ? 1 : 0
+    }));
+    setCurrentStep(2);
+    setModalOpen(true);
   };
 
   const getStatusColor = (status) => {
@@ -616,6 +786,29 @@ const GestionContratos = () => {
         <GestionPlantillasContratos />
       ) : (
         <>
+      <div className="mb-6">
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setContratosView('colaboradores')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              contratosView === 'colaboradores' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Colaboradores
+          </button>
+          <button
+            type="button"
+            onClick={() => setContratosView('contratos')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              contratosView === 'contratos' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Contratos
+          </button>
+        </div>
+      </div>
+
       {/* Firma de Gerencia (Contratos) */}
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
@@ -637,7 +830,7 @@ const GestionContratos = () => {
                   <button 
                     onClick={async () => {
                       try {
-                        await axios.post(`${API_URL}contratos.php?action=delete_signature`);
+                        await axios.post(`${API_URL}contratos.php?action=delete_signature`, null, { headers: getAuthHeaders() });
                         toast.success("Firma eliminada");
                         fetchSignature();
                       } catch {
@@ -666,7 +859,7 @@ const GestionContratos = () => {
                         const toastId = toast.loading("Subiendo firma...");
                         try {
                           await axios.post(`${API_URL}contratos.php?action=upload_signature`, fd, {
-                            headers: { 'Content-Type': 'multipart/form-data' }
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'multipart/form-data' }
                           });
                           toast.success("Firma subida", { id: toastId });
                           fetchSignature();
@@ -725,6 +918,142 @@ const GestionContratos = () => {
         </div>
       </div>
 
+      {contratosView === 'colaboradores' ? (
+        <>
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-wrap items-center gap-4">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Buscar colaborador por nombre o DNI..."
+                value={colabListSearch}
+                onChange={(e) => { setColabListSearch(e.target.value); setColabListPage(1); }}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-600">Registros</label>
+              <select
+                className="px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={colabListLimit}
+                onChange={(e) => { setColabListLimit(Number(e.target.value) || 20); setColabListPage(1); }}
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={5000}>Todos</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => setColabListPage(p => Math.max(1, p - 1))}
+                disabled={colabListPage <= 1 || colabListLoading}
+              >
+                Anterior
+              </button>
+              <div className="text-sm text-gray-600">
+                {colabListPage} / {colabListTotalPages}{colabListTotal ? ` • Total: ${colabListTotal}` : ''}
+              </div>
+              <button
+                type="button"
+                className="px-3 py-2 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => setColabListPage(p => Math.min(colabListTotalPages, p + 1))}
+                disabled={colabListPage >= colabListTotalPages || colabListLoading}
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
+                    <th className="p-4 border-b">Colaborador</th>
+                    <th className="p-4 border-b">Documento</th>
+                    <th className="p-4 border-b">Cargo / Área</th>
+                    <th className="p-4 border-b text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {colabListLoading ? (
+                    <tr><td colSpan="4" className="p-8 text-center text-gray-500">Cargando...</td></tr>
+                  ) : colaboradoresList.length === 0 ? (
+                    <tr><td colSpan="4" className="p-8 text-center text-gray-500">No se encontraron colaboradores.</td></tr>
+                  ) : (
+                    colaboradoresList.map(c => (
+                      <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="p-4">
+                          <div className="font-semibold text-gray-800">{(c.apellidos || '').trim()}, {(c.nombres || '').trim()}</div>
+                          <div className="text-xs text-gray-500">{c.email || '-'}</div>
+                        </td>
+                        <td className="p-4 text-gray-700">{c.documento_numero || '-'}</td>
+                        <td className="p-4 text-gray-700">{c.cargo || '-'}{c.area ? ` / ${c.area}` : ''}</td>
+                        <td className="p-4 text-center">
+                          <div className="flex justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openContratoParaColaborador(c)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Nuevo contrato"
+                              disabled={colabActionLoadingId === c.id}
+                            >
+                              <Plus size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColaboradorContratoAction(c.id, 'pdf')}
+                              className="p-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50"
+                              title="Ver PDF"
+                              disabled={colabActionLoadingId === c.id}
+                            >
+                              <Eye size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColaboradorContratoAction(c.id, 'renew')}
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors disabled:opacity-50"
+                              title="Renovar"
+                              disabled={colabActionLoadingId === c.id}
+                            >
+                              <RefreshCw size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColaboradorContratoAction(c.id, 'edit')}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                              title="Editar"
+                              disabled={colabActionLoadingId === c.id}
+                            >
+                              <Pencil size={18} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleColaboradorContratoAction(c.id, 'delete')}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                              title="Eliminar"
+                              disabled={colabActionLoadingId === c.id}
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+      <>
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-wrap items-center gap-4">
         <div className="relative flex-1 min-w-[200px]">
@@ -835,6 +1164,14 @@ const GestionContratos = () => {
                           <FileText size={18} />
                         </button>
                         <button 
+                          onClick={() => openContratoPDF(item)}
+                          className="p-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50"
+                          title="Ver PDF"
+                          disabled={!item.archivo_url}
+                        >
+                          <Eye size={18} />
+                        </button>
+                        <button 
                           onClick={() => handleRenew(item)}
                           className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                           title="Renovar"
@@ -883,6 +1220,8 @@ const GestionContratos = () => {
         </div>
         {/* Pagination Controls could be added here */}
       </div>
+      </>
+      )}
 
       {/* Modal */}
       {modalOpen && (
@@ -962,6 +1301,99 @@ const GestionContratos = () => {
                                     <Search size={18} />
                                     Buscar
                                 </button>
+                            </div>
+                        </div>
+
+                        <div className="bg-white border border-gray-200 rounded-lg p-4">
+                            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar colaborador existente</label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="Buscar por nombres, apellidos o DNI..."
+                                        value={colabSearch}
+                                        onChange={(e) => { setColabSearch(e.target.value); setColabPage(1); }}
+                                    />
+                                </div>
+                                    <div className="flex items-end gap-2 flex-wrap justify-end">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Registros</label>
+                                            <select
+                                                className="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white"
+                                                value={colabLimit}
+                                                onChange={(e) => { setColabLimit(Number(e.target.value) || 20); setColabPage(1); }}
+                                            >
+                                                <option value={10}>10</option>
+                                                <option value={20}>20</option>
+                                                <option value={50}>50</option>
+                                                <option value={100}>100</option>
+                                                <option value={5000}>Todos</option>
+                                            </select>
+                                        </div>
+                                    <button
+                                        type="button"
+                                        className="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                        onClick={() => setColabPage(p => Math.max(1, p - 1))}
+                                            disabled={colabPage <= 1 || colabLoading}
+                                    >
+                                        Anterior
+                                    </button>
+                                    <div className="text-sm text-gray-600 px-2">
+                                            {colabPage} / {colabTotalPages}{colabTotal ? ` • Total: ${colabTotal}` : ''}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                        onClick={() => setColabPage(p => Math.min(colabTotalPages, p + 1))}
+                                            disabled={colabPage >= colabTotalPages || colabLoading}
+                                    >
+                                        Siguiente
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="border rounded-lg overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse">
+                                        <thead className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
+                                            <tr>
+                                                <th className="p-3 border-b">DNI</th>
+                                                <th className="p-3 border-b">Colaborador</th>
+                                                <th className="p-3 border-b">Cargo / Área</th>
+                                                <th className="p-3 border-b text-right">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {colabLoading ? (
+                                                <tr><td colSpan="4" className="p-4 text-center text-gray-500">Cargando...</td></tr>
+                                            ) : colaboradores.length === 0 ? (
+                                                <tr><td colSpan="4" className="p-4 text-center text-gray-500">No se encontraron colaboradores.</td></tr>
+                                            ) : (
+                                                colaboradores.map(c => (
+                                                    <tr key={c.id} className="hover:bg-gray-50">
+                                                        <td className="p-3 text-sm text-gray-700 whitespace-nowrap">{c.documento_numero || '-'}</td>
+                                                        <td className="p-3 text-sm text-gray-800">
+                                                            {(c.apellidos || '').trim()}, {(c.nombres || '').trim()}
+                                                        </td>
+                                                        <td className="p-3 text-sm text-gray-700">
+                                                            {(c.cargo || '-')} {c.area ? ` / ${c.area}` : ''}
+                                                        </td>
+                                                        <td className="p-3 text-right">
+                                                            <button
+                                                                type="button"
+                                                                className="px-3 py-1.5 bg-gray-800 text-white rounded-lg hover:bg-gray-900 text-sm"
+                                                                onClick={() => seleccionarColaborador(c)}
+                                                            >
+                                                                Elegir
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
 

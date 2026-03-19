@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header("Content-Type: application/json");
 
@@ -20,6 +21,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 try {
+    rbac_require($conn, $user_data, 'contabilidad', $method);
+
     if ($method === 'GET') {
         switch ($action) {
             // --- PCGE ---

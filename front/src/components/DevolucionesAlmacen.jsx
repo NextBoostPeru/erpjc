@@ -57,8 +57,8 @@ const DevolucionesAlmacen = () => {
     setLoading(true);
     try {
       const url = filterTipo 
-        ? `${API_URL}/devoluciones.php?action=listar&tipo=${filterTipo}`
-        : `${API_URL}/devoluciones.php?action=listar`;
+        ? `${API_URL}devoluciones.php?action=listar&tipo=${filterTipo}`
+        : `${API_URL}devoluciones.php?action=listar`;
       
       const res = await axios.get(url, { headers });
       setDevoluciones(res.data);
@@ -121,7 +121,7 @@ const DevolucionesAlmacen = () => {
 
     // Fetch details
     try {
-        const res = await axios.get(`${API_URL}/devoluciones.php?action=obtener_detalle_venta&id=${venta.id}`, { headers });
+        const res = await axios.get(`${API_URL}devoluciones.php?action=obtener_detalle_venta&id=${venta.id}`, { headers });
         const items = res.data.map(item => ({
             producto_id: item.producto_id,
             descripcion: item.descripcion,
@@ -187,7 +187,7 @@ const DevolucionesAlmacen = () => {
     }
 
     try {
-      await axios.post(`${API_URL}/devoluciones.php?action=crear`, formData, { headers });
+      await axios.post(`${API_URL}devoluciones.php?action=crear`, formData, { headers });
       toast.success('Devolución registrada');
       setShowModal(false);
       fetchDevoluciones();
@@ -212,7 +212,7 @@ const DevolucionesAlmacen = () => {
     if (!window.confirm('¿Aprobar devolución y actualizar stock?')) return;
     
     try {
-      await axios.post(`${API_URL}/devoluciones.php?action=aprobar`, { id }, { headers });
+      await axios.post(`${API_URL}devoluciones.php?action=aprobar`, { id }, { headers });
       toast.success('Devolución aprobada');
       fetchDevoluciones();
     } catch (error) {

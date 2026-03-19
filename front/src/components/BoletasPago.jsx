@@ -32,6 +32,12 @@ const BoletasPago = () => {
     const [signatureInfo, setSignatureInfo] = useState({ exists: false, path: null });
     const [signatureLoading, setSignatureLoading] = useState(false);
 
+    const getAuthHeaders = (extra = {}) => {
+        const token = localStorage.getItem('token') || '';
+        const auth = token ? { Authorization: `Bearer ${token}` } : {};
+        return { ...extra, ...auth };
+    };
+
     useEffect(() => {
         fetchPlanillas();
         fetchSignatureInfo();
@@ -54,10 +60,7 @@ const BoletasPago = () => {
 
     const fetchPlanillas = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/boletas.php?action=list_planillas`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_URL}boletas.php?action=list_planillas`, { headers: getAuthHeaders() });
             setPlanillas(response.data);
         } catch (error) {
             console.error('Error cargando planillas', error);
@@ -68,10 +71,7 @@ const BoletasPago = () => {
     const fetchSignatureInfo = async () => {
         setSignatureLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const resp = await axios.get(`${API_URL}/boletas.php?action=get_signature`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const resp = await axios.get(`${API_URL}boletas.php?action=get_signature`, { headers: getAuthHeaders() });
             setSignatureInfo(resp.data);
         } catch (error) {
             setSignatureInfo({ exists: false, path: null });
@@ -83,10 +83,7 @@ const BoletasPago = () => {
     const fetchDetalles = async (planillaId) => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/boletas.php?action=list_details&planilla_id=${planillaId}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_URL}boletas.php?action=list_details&planilla_id=${planillaId}`, { headers: getAuthHeaders() });
             setDetalles(response.data);
         } catch (error) {
             console.error('Error cargando detalles', error);
@@ -98,13 +95,10 @@ const BoletasPago = () => {
 
     const generatePdf = async (detalle, signature) => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.post(`${API_URL}/boletas.php?action=generate_pdf`, {
+            const response = await axios.post(`${API_URL}boletas.php?action=generate_pdf`, {
                 detalle_id: detalle.id,
                 with_signature: signature
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            }, { headers: getAuthHeaders() });
 
             if (response.data.success) {
                 const url = base64ToBlobUrl(response.data.pdf_base64);
@@ -137,12 +131,9 @@ const BoletasPago = () => {
     const handleSendEmail = async (detalle) => {
         if (!confirm(`¿Enviar boleta por correo a ${detalle.nombres} ${detalle.apellidos}?`)) return;
 
-        const token = localStorage.getItem('token');
-        const promise = axios.post(`${API_URL}/boletas.php?action=send_email`, {
+        const promise = axios.post(`${API_URL}boletas.php?action=send_email`, {
             detalle_id: detalle.id
-        }, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        }, { headers: getAuthHeaders() });
 
         toast.promise(promise, {
             loading: 'Enviando correo...',
@@ -156,12 +147,13 @@ const BoletasPago = () => {
         if (!file) return;
         setSignatureUploading(true);
         try {
-            const token = localStorage.getItem('token');
             const formData = new FormData();
             formData.append('firma', file);
-            const response = await axios.post(`${API_URL}/boletas.php?action=upload_signature`, formData, {
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' }
-            });
+            const response = await axios.post(
+                `${API_URL}boletas.php?action=upload_signature`,
+                formData,
+                { headers: getAuthHeaders({ 'Content-Type': 'multipart/form-data' }) }
+            );
             if (response.data?.success) {
                 toast.success('Firma de gerencia actualizada');
                 fetchSignatureInfo();
@@ -179,10 +171,7 @@ const BoletasPago = () => {
     const handleDeleteSignature = async () => {
         if (!confirm('¿Eliminar la firma de gerencia?')) return;
         try {
-            const token = localStorage.getItem('token');
-            const resp = await axios.post(`${API_URL}/boletas.php?action=delete_signature`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const resp = await axios.post(`${API_URL}boletas.php?action=delete_signature`, {}, { headers: getAuthHeaders() });
             if (resp.data?.success) {
                 toast.success('Firma de gerencia eliminada');
                 fetchSignatureInfo();
@@ -241,7 +230,7 @@ const BoletasPago = () => {
                                 <span className="text-gray-400 text-sm">Cargando...</span>
                             ) : signatureInfo?.exists ? (
                                 <img 
-                                    src={`${API_URL}/public_files.php?path=${encodeURIComponent(signatureInfo.path)}`} 
+                                    src={`${API_URL}public_files.php?path=${encodeURIComponent(signatureInfo.path)}`} 
                                     alt="Firma Gerencia" 
                                     className="max-h-10 object-contain"
                                 />

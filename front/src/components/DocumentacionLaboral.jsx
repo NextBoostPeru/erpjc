@@ -3,7 +3,7 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { 
   FileText, Folder, Upload, Trash2, Download, 
-  AlertTriangle, Calendar, Search, Filter, ArrowLeft, Users
+  AlertTriangle, Calendar, Search, Filter, ArrowLeft, Users, Pencil
 } from 'lucide-react';
 
 import { API_URL } from '../api/config';
@@ -12,6 +12,7 @@ const DocumentacionLaboral = () => {
   const [viewMode, setViewMode] = useState('folders'); // folders, files
   const [documents, setDocuments] = useState([]);
   const [colaboradores, setColaboradores] = useState([]);
+  const [colaboradorOptions, setColaboradorOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   
   // Selected Context
@@ -21,6 +22,25 @@ const DocumentacionLaboral = () => {
   const [selectedType, setSelectedType] = useState('');
   const [showExpired, setShowExpired] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [folderPage, setFolderPage] = useState(1);
+  const [folderTotalPages, setFolderTotalPages] = useState(1);
+  const [folderLimit] = useState(24);
+
+  const [documentSearchTerm, setDocumentSearchTerm] = useState('');
+  const [debouncedDocumentSearchTerm, setDebouncedDocumentSearchTerm] = useState('');
+  const [documentsPage, setDocumentsPage] = useState(1);
+  const [documentsTotalPages, setDocumentsTotalPages] = useState(1);
+  const [documentsLimit] = useState(12);
+
+  // Edit Modal
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    tipo_documento: 'Contrato',
+    fecha_vencimiento: '',
+    comentario: ''
+  });
 
   // Upload Modal
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -33,22 +53,44 @@ const DocumentacionLaboral = () => {
   });
 
   useEffect(() => {
-    fetchColaboradores();
-  }, []);
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedDocumentSearchTerm(documentSearchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [documentSearchTerm]);
+
+  useEffect(() => {
+    if (viewMode === 'folders') {
+      fetchColaboradores(folderPage, debouncedSearchTerm);
+    }
+  }, [viewMode, folderPage, debouncedSearchTerm]);
 
   useEffect(() => {
     if (viewMode === 'files' && selectedColab) {
       fetchDocuments(selectedColab.id);
     }
-  }, [viewMode, selectedColab, selectedType, showExpired]);
+  }, [viewMode, selectedColab, selectedType, showExpired, documentsPage, debouncedDocumentSearchTerm]);
 
-  const fetchColaboradores = async () => {
+  const fetchColaboradores = async (page = 1, search = '') => {
+    setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/colaboradores.php`);
-      setColaboradores(res.data.data || []);
+      const token = localStorage.getItem('token');
+      const url = `${API_URL}/colaboradores.php?page=${page}&limit=${folderLimit}&search=${encodeURIComponent(search)}`;
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      setColaboradores(rows);
+      const totalPages = Number(res.data?.pagination?.totalPages || 1);
+      setFolderTotalPages(Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 1);
       setLoading(false);
     } catch (error) {
       console.error(error);
+      setColaboradores([]);
+      setFolderTotalPages(1);
       setLoading(false);
     }
   };
@@ -56,12 +98,24 @@ const DocumentacionLaboral = () => {
   const fetchDocuments = async (colabId) => {
     setLoading(true);
     try {
-      let url = `${API_URL}/documentacion.php?colaborador_id=${colabId}&`;
+      const token = localStorage.getItem('token');
+      let url = `${API_URL}/documentacion.php?colaborador_id=${colabId}&page=${documentsPage}&limit=${documentsLimit}&`;
       if (selectedType) url += `type=${selectedType}&`;
       if (showExpired) url += `alerts=true&`;
+      if (debouncedDocumentSearchTerm) url += `search=${encodeURIComponent(debouncedDocumentSearchTerm)}&`;
       
-      const res = await axios.get(url);
-      setDocuments(res.data);
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const payload = res.data;
+      if (Array.isArray(payload)) {
+        setDocuments(payload);
+        setDocumentsTotalPages(1);
+      } else {
+        setDocuments(Array.isArray(payload?.data) ? payload.data : []);
+        const totalPages = Number(payload?.pagination?.totalPages || 1);
+        setDocumentsTotalPages(Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 1);
+      }
     } catch (error) {
       toast.error('Error al cargar documentos');
     } finally {
@@ -69,9 +123,25 @@ const DocumentacionLaboral = () => {
     }
   };
 
+  const fetchColaboradorOptions = async () => {
+    if (colaboradorOptions.length > 0) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/colaboradores.php?page=1&limit=5000`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setColaboradorOptions(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch (error) {
+      console.error(error);
+      setColaboradorOptions([]);
+    }
+  };
+
   const handleFolderClick = (colab) => {
     setSelectedColab(colab);
     setViewMode('files');
+    setDocumentsPage(1);
+    setDocumentSearchTerm('');
     // Pre-fill upload form with this colab
     setUploadForm(prev => ({ ...prev, colaborador_id: colab.id }));
   };
@@ -80,6 +150,8 @@ const DocumentacionLaboral = () => {
     setViewMode('folders');
     setSelectedColab(null);
     setDocuments([]);
+    setDocumentsPage(1);
+    setDocumentSearchTerm('');
     setUploadForm(prev => ({ ...prev, colaborador_id: '' }));
   };
 
@@ -106,8 +178,12 @@ const DocumentacionLaboral = () => {
     });
 
     try {
-      await axios.post(`${API_URL}documentacion.php`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/documentacion.php`, formData, {
+        headers: { 
+          'Content-Type': 'multipart/form-data',
+          Authorization: `Bearer ${token}`
+        }
       });
       toast.success('Documentos subidos correctamente');
       setShowUploadModal(false);
@@ -130,7 +206,10 @@ const DocumentacionLaboral = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('¿Está seguro de eliminar este documento?')) return;
     try {
-      await axios.delete(`${API_URL}documentacion.php?id=${id}`);
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/documentacion.php?id=${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       toast.success('Documento eliminado');
       if (selectedColab) fetchDocuments(selectedColab.id);
     } catch (error) {
@@ -152,15 +231,34 @@ const DocumentacionLaboral = () => {
     return new Date(dateStr) < new Date();
   };
 
-  // Filter collaborators for folder view
-  const filteredColaboradores = collaborators => {
-    if (!searchTerm) return collaborators;
-    const lower = searchTerm.toLowerCase();
-    return collaborators.filter(c => 
-      c.nombres.toLowerCase().includes(lower) || 
-      c.apellidos.toLowerCase().includes(lower) ||
-      c.documento_numero.includes(lower)
-    );
+  const openUploadModal = () => {
+    setShowUploadModal(true);
+    fetchColaboradorOptions();
+  };
+
+  const openEditModal = (doc) => {
+    setEditForm({
+      id: doc.id,
+      tipo_documento: doc.tipo_documento || 'Contrato',
+      fecha_vencimiento: doc.fecha_vencimiento || '',
+      comentario: doc.comentario || ''
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/documentacion.php?action=update`, editForm, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Documento actualizado');
+      setShowEditModal(false);
+      if (selectedColab) fetchDocuments(selectedColab.id);
+    } catch (error) {
+      toast.error('Error al actualizar documento');
+    }
   };
 
   return (
@@ -186,7 +284,7 @@ const DocumentacionLaboral = () => {
           </div>
         </div>
         <button
-          onClick={() => setShowUploadModal(true)}
+          onClick={openUploadModal}
           className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm"
         >
           <Upload size={20} className="mr-2" />
@@ -205,12 +303,15 @@ const DocumentacionLaboral = () => {
                 placeholder="Buscar colaborador..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setFolderPage(1);
+                }}
              />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {filteredColaboradores(colaboradores).map(colab => (
+            {colaboradores.map(colab => (
               <div 
                 key={colab.id}
                 onClick={() => handleFolderClick(colab)}
@@ -232,6 +333,28 @@ const DocumentacionLaboral = () => {
                <div className="col-span-full text-center py-10 text-gray-500">No hay colaboradores registrados.</div>
             )}
           </div>
+
+          {folderTotalPages > 1 && (
+            <div className="p-4 border border-gray-200 rounded-xl flex justify-between items-center bg-gray-50">
+              <span className="text-sm text-gray-600">Página {folderPage} de {folderTotalPages}</span>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setFolderPage(p => Math.max(1, p - 1))}
+                  disabled={folderPage === 1}
+                  className="px-3 py-1 border rounded hover:bg-white disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <button 
+                  onClick={() => setFolderPage(p => Math.min(folderTotalPages, p + 1))}
+                  disabled={folderPage === folderTotalPages}
+                  className="px-3 py-1 border rounded hover:bg-white disabled:opacity-50"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         // FILES VIEW
@@ -245,7 +368,10 @@ const DocumentacionLaboral = () => {
             <select 
               className="rounded-md border border-gray-300 p-2 text-sm"
               value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
+              onChange={(e) => {
+                setSelectedType(e.target.value);
+                setDocumentsPage(1);
+              }}
             >
               <option value="">Todos los Tipos</option>
               <option value="Contrato">Contratos</option>
@@ -258,11 +384,27 @@ const DocumentacionLaboral = () => {
               <input 
                 type="checkbox" 
                 checked={showExpired}
-                onChange={(e) => setShowExpired(e.target.checked)}
+                onChange={(e) => {
+                  setShowExpired(e.target.checked);
+                  setDocumentsPage(1);
+                }}
                 className="rounded text-blue-600 focus:ring-blue-500"
               />
               Mostrar Vencimientos Próximos
             </label>
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                placeholder="Buscar documento..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                value={documentSearchTerm}
+                onChange={(e) => {
+                  setDocumentSearchTerm(e.target.value);
+                  setDocumentsPage(1);
+                }}
+              />
+            </div>
           </div>
 
           {/* Documents Grid */}
@@ -288,6 +430,13 @@ const DocumentacionLaboral = () => {
                     >
                       <Download size={18} />
                     </a>
+                    <button
+                      onClick={() => openEditModal(doc)}
+                      className="text-gray-400 hover:text-gray-700 transition-colors"
+                      title="Editar"
+                    >
+                      <Pencil size={18} />
+                    </button>
                     <button 
                       onClick={() => handleDelete(doc.id)}
                       className="text-gray-400 hover:text-red-600 transition-colors"
@@ -333,6 +482,28 @@ const DocumentacionLaboral = () => {
               </div>
             )}
           </div>
+
+          {documentsTotalPages > 1 && (
+            <div className="p-4 border border-gray-200 rounded-xl flex justify-between items-center bg-gray-50">
+              <span className="text-sm text-gray-600">Página {documentsPage} de {documentsTotalPages}</span>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setDocumentsPage(p => Math.max(1, p - 1))}
+                  disabled={documentsPage === 1}
+                  className="px-3 py-1 border rounded hover:bg-white disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <button 
+                  onClick={() => setDocumentsPage(p => Math.min(documentsTotalPages, p + 1))}
+                  disabled={documentsPage === documentsTotalPages}
+                  className="px-3 py-1 border rounded hover:bg-white disabled:opacity-50"
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -352,9 +523,22 @@ const DocumentacionLaboral = () => {
                   disabled={!!selectedColab && viewMode === 'files'} // Lock if inside a folder
                 >
                   <option value="">Seleccione...</option>
-                  {colaboradores.map(c => (
-                    <option key={c.id} value={c.id}>{c.apellidos}, {c.nombres}</option>
-                  ))}
+                  {(() => {
+                    const list = colaboradorOptions.length > 0 ? colaboradorOptions : colaboradores;
+                    const hasSelected = selectedColab && list.some(c => String(c.id) === String(selectedColab.id));
+                    return (
+                      <>
+                        {!hasSelected && selectedColab && (
+                          <option key={selectedColab.id} value={selectedColab.id}>
+                            {selectedColab.apellidos}, {selectedColab.nombres}
+                          </option>
+                        )}
+                        {list.map(c => (
+                          <option key={c.id} value={c.id}>{c.apellidos}, {c.nombres}</option>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </select>
               </div>
               <div>
@@ -416,6 +600,53 @@ const DocumentacionLaboral = () => {
               <div className="flex justify-end gap-2 pt-4">
                 <button type="button" onClick={() => setShowUploadModal(false)} className="px-4 py-2 text-gray-600">Cancelar</button>
                 <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Subir</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-96 max-w-lg">
+            <h3 className="text-lg font-bold mb-4">Editar Documento</h3>
+            <form onSubmit={handleEditSave} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tipo Documento</label>
+                <select 
+                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                  value={editForm.tipo_documento}
+                  onChange={(e) => setEditForm({ ...editForm, tipo_documento: e.target.value })}
+                >
+                  <option value="Contrato">Contrato</option>
+                  <option value="Boleta">Boleta de Pago</option>
+                  <option value="DNI">DNI</option>
+                  <option value="Certificado">Certificado</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Fecha Vencimiento (Opcional)</label>
+                <input 
+                  type="date"
+                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                  value={editForm.fecha_vencimiento}
+                  onChange={(e) => setEditForm({ ...editForm, fecha_vencimiento: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Comentario</label>
+                <textarea 
+                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                  rows="3"
+                  value={editForm.comentario}
+                  onChange={(e) => setEditForm({ ...editForm, comentario: e.target.value })}
+                ></textarea>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-600">Cancelar</button>
+                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar</button>
               </div>
             </form>
           </div>

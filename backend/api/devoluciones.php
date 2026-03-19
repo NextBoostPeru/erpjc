@@ -1,6 +1,7 @@
 <?php
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 // Robust include for StockHelper
 $stockHelperPath = __DIR__ . '/helpers/StockHelper.php';
@@ -18,6 +19,9 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'devoluciones', $method);
 
 // Ensure tables exist (Auto-migration)
 try {

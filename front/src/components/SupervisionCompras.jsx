@@ -78,7 +78,7 @@ const SupervisionCompras = () => {
       setApprovals(res.data);
     } catch (error) {
       console.error(error);
-      toast.error('Error procesando solicitud');
+      toast.error(error.response?.data?.message || 'Error procesando solicitud');
     }
   };
 

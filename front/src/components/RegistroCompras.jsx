@@ -168,7 +168,7 @@ const RegistroCompras = () => {
         e.preventDefault();
         try {
             const endpoint = editMode ? 'editar' : 'crear';
-            await axios.post(`${API_URL}/registro_compras.php?action=${endpoint}`, formData, {
+            await axios.post(`${API_URL}registro_compras.php?action=${endpoint}`, formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setShowModal(false);

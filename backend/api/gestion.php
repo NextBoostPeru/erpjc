@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
@@ -22,8 +23,70 @@ if (!$userData) {
     exit;
 }
 
+$method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
-$userId = $userData->id;
+
+$requiredPerm = null;
+switch ($action) {
+    case 'list_coordinaciones':
+    case 'get_coordinaciones':
+    case 'get_my_companies':
+    case 'get_historial':
+        $requiredPerm = 'lectura';
+        break;
+    case 'create_coordinacion':
+    case 'create_historial_entry':
+        $requiredPerm = 'crear';
+        break;
+    case 'update_coordinacion':
+        $requiredPerm = 'editar';
+        break;
+    case 'delete_coordinacion':
+        $requiredPerm = 'eliminacion';
+        break;
+    case 'get_asignaciones':
+    case 'get_user_companies':
+    case 'assign_company':
+    case 'assign_cliente':
+    case 'remove_assignment':
+    case 'delete_asignacion':
+    case 'search_companies_to_assign':
+    case 'get_users_gestion':
+        $requiredPerm = 'editar';
+        break;
+    default:
+        $requiredPerm = rbac_required_perm_for_method($method);
+        break;
+}
+
+[$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+function rbac_require_any(PDO $conn, $userData, array $moduleCodes, string $method, ?string $perm = null): array {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = $perm ?? rbac_required_perm_for_request($method);
+
+    foreach ($moduleCodes as $code) {
+        if (rbac_can($conn, (int)$rolId, (string)$rolNombre, (string)$code, $required)) {
+            return [$userId, $rolId, $rolNombre, $required, $code];
+        }
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => $moduleCodes[0] ?? '',
+        "modulos" => $moduleCodes,
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+[, $rolId, $rolNombre] = rbac_require_any($conn, $userData, ['gestion_coordinaciones', 'gestion'], $method, $requiredPerm);
+$canManage =
+    rbac_can($conn, (int)$rolId, (string)$rolNombre, 'gestion_coordinaciones', 'editar')
+    || rbac_can($conn, (int)$rolId, (string)$rolNombre, 'gestion', 'editar');
 
 try {
     // ==========================================
@@ -33,7 +96,7 @@ try {
     if ($action === 'list_coordinaciones' || $action === 'get_coordinaciones') {
         $startDate = $_GET['start_date'] ?? null;
         $endDate = $_GET['end_date'] ?? null;
-        $filterUser = $_GET['usuario_id'] ?? null; // For managers to see specific user's logs
+        $filterUser = $_GET['usuario_id'] ?? null;
         $clienteId = $_GET['cliente_id'] ?? null;
 
         $sql = "SELECT c.*, cl.razon_social as cliente_razon_social, cl.razon_social as cliente_nombre, u.usuario as usuario_nombre 
@@ -43,25 +106,10 @@ try {
                 WHERE 1=1";
         
         $params = [];
-
-        // Check if user is Admin (1) or Gerencia (2)
-        // Adjust these IDs based on your roles table
-        // Assuming rol_id 1=Admin, 2=Gerencia based on typical setups, but checking userData
-        // If not admin/gerencia, filter by own user_id
-        
-        // We need to know the role. userData usually has rol_id or similar.
-        // Let's assume userData->rol_id is available.
-        $userRoleId = $userData->rol_id ?? 0;
-        
-        // Roles allowed to see all: 1 (Admin), 2 (Gerencia) - Adjust if needed
-        $canSeeAll = in_array($userRoleId, [1, 2]);
-
-        if (!$canSeeAll) {
-            // Regular users only see their own coordinations
-            $sql .= " AND c.usuario_id = ?";
-            $params[] = $userId;
-        } elseif ($filterUser) {
-            // Admin/Gerencia can filter by specific user
+        if (!$canManage) {
+            $filterUser = $userId;
+        }
+        if ($filterUser) {
             $sql .= " AND c.usuario_id = ?";
             $params[] = $filterUser;
         }
@@ -92,7 +140,7 @@ try {
         }
 
         // Allow assigning to another user if provided, otherwise use current user
-        $assignedUser = !empty($data['usuario_id']) ? $data['usuario_id'] : $userId;
+        $assignedUser = ($canManage && !empty($data['usuario_id'])) ? $data['usuario_id'] : $userId;
 
         $stmt = $conn->prepare("INSERT INTO gestion_coordinaciones (usuario_id, cliente_id, fecha, tipo, detalle, estado) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->execute([
@@ -112,6 +160,16 @@ try {
         
         if (empty($data['id'])) throw new Exception("ID requerido");
 
+        if (!$canManage) {
+            $stmtCheck = $conn->prepare("SELECT id FROM gestion_coordinaciones WHERE id = ? AND usuario_id = ? LIMIT 1");
+            $stmtCheck->execute([$data['id'], $userId]);
+            if (!$stmtCheck->fetchColumn()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Acceso denegado']);
+                exit;
+            }
+        }
+
         // Prepare update query
         $fields = ["fecha=?", "tipo=?", "detalle=?", "estado=?"];
         $params = [
@@ -122,7 +180,7 @@ try {
         ];
 
         // Allow updating assigned user if provided (e.g. for reassignment)
-        if (isset($data['usuario_id']) && !empty($data['usuario_id'])) {
+        if ($canManage && isset($data['usuario_id']) && !empty($data['usuario_id'])) {
             $fields[] = "usuario_id=?";
             $params[] = $data['usuario_id'];
         }
@@ -138,7 +196,11 @@ try {
 
     elseif ($action === 'delete_coordinacion') {
         $id = $_GET['id'] ?? 0;
-        $conn->prepare("DELETE FROM gestion_coordinaciones WHERE id=?")->execute([$id]);
+        if (!$canManage) {
+            $conn->prepare("DELETE FROM gestion_coordinaciones WHERE id=? AND usuario_id=?")->execute([$id, $userId]);
+        } else {
+            $conn->prepare("DELETE FROM gestion_coordinaciones WHERE id=?")->execute([$id]);
+        }
         echo json_encode(['success' => true]);
     }
 
@@ -147,6 +209,11 @@ try {
     // ==========================================
 
     elseif ($action === 'get_asignaciones') {
+        if (!$canManage) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Acceso denegado']);
+            exit;
+        }
         $stmt = $conn->query("
             SELECT ga.*, u.usuario as usuario_nombre, u.nombre_real, cl.razon_social as cliente_razon_social, cl.razon_social as cliente_nombre, cl.num_doc as cliente_num_doc
             FROM gestion_asignaciones ga
@@ -171,6 +238,11 @@ try {
     }
 
     elseif ($action === 'get_user_companies') {
+        if (!$canManage) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Acceso denegado']);
+            exit;
+        }
         // Get companies for a specific user (for management view)
         $targetUserId = $_GET['user_id'] ?? 0;
         $stmt = $conn->prepare("
@@ -185,6 +257,11 @@ try {
     }
 
     elseif (($action === 'assign_company' || $action === 'assign_cliente') && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!$canManage) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Acceso denegado']);
+            exit;
+        }
         $data = json_decode(file_get_contents("php://input"), true);
         
         $targetUserId = $data['usuario_id'];
@@ -209,6 +286,11 @@ try {
     }
 
     elseif ($action === 'remove_assignment' || $action === 'delete_asignacion') {
+        if (!$canManage) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Acceso denegado']);
+            exit;
+        }
         $data = json_decode(file_get_contents("php://input"), true);
         $id = $_GET['id'] ?? $data['id'] ?? 0;
         $conn->prepare("DELETE FROM gestion_asignaciones WHERE id=?")->execute([$id]);
@@ -216,6 +298,11 @@ try {
     }
 
     elseif ($action === 'search_companies_to_assign') {
+        if (!$canManage) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Acceso denegado']);
+            exit;
+        }
         $search = $_GET['search'] ?? '';
         if (strlen($search) < 3) {
             echo json_encode([]);
@@ -233,6 +320,15 @@ try {
 
     elseif ($action === 'get_historial') {
         $coordId = $_GET['coordinacion_id'] ?? 0;
+        if (!$canManage) {
+            $stmtCheck = $conn->prepare("SELECT id FROM gestion_coordinaciones WHERE id = ? AND usuario_id = ? LIMIT 1");
+            $stmtCheck->execute([$coordId, $userId]);
+            if (!$stmtCheck->fetchColumn()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Acceso denegado']);
+                exit;
+            }
+        }
         $stmt = $conn->prepare("
             SELECT h.*, u.usuario as usuario_nombre 
             FROM gestion_historial_coordinaciones h 
@@ -251,6 +347,16 @@ try {
             throw new Exception("Datos incompletos");
         }
 
+        if (!$canManage) {
+            $stmtCheck = $conn->prepare("SELECT id FROM gestion_coordinaciones WHERE id = ? AND usuario_id = ? LIMIT 1");
+            $stmtCheck->execute([$data['coordinacion_id'], $userId]);
+            if (!$stmtCheck->fetchColumn()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Acceso denegado']);
+                exit;
+            }
+        }
+
         $stmt = $conn->prepare("INSERT INTO gestion_historial_coordinaciones (coordinacion_id, usuario_id, detalle) VALUES (?, ?, ?)");
         $stmt->execute([
             $data['coordinacion_id'],
@@ -266,8 +372,11 @@ try {
     // ==========================================
     
     elseif ($action === 'get_users_gestion') {
-        // Get users who are in 'Gestion' area or all users to filter
-        // For now, return all users
+        if (!$canManage) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Acceso denegado']);
+            exit;
+        }
         $stmt = $conn->query("SELECT id, usuario, nombre_real FROM usuarios WHERE status='activo' ORDER BY usuario");
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     }

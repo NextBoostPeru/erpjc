@@ -1,6 +1,7 @@
 <?php
 require_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 // Validar Token
 $jwtHandler = new JWTHandler();
@@ -15,6 +16,8 @@ if (!$userData) {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+rbac_require($conn, $userData, 'agenda_corporativa', $method);
 
 if ($method === 'GET') {
     // Listar eventos

@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -16,6 +17,9 @@ try {
         echo json_encode(["message" => "Acceso no autorizado"]);
         exit;
     }
+
+    $method = $_SERVER['REQUEST_METHOD'];
+    rbac_require($conn, $userData, 'reportes_financieros', $method);
 
     $action = $_GET['action'] ?? '';
     $anio = $_GET['anio'] ?? date('Y');

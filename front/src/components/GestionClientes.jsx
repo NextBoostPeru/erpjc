@@ -12,6 +12,8 @@ const GestionClientes = () => {
   const [selectedCliente, setSelectedCliente] = useState(null);
   const [historial, setHistorial] = useState([]);
   const [showHistorialModal, setShowHistorialModal] = useState(false);
+  const token = localStorage.getItem('token');
+  const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
   const initialFormState = {
     tipo_doc: '6', // RUC by default
@@ -36,10 +38,11 @@ const GestionClientes = () => {
 
   const fetchClientes = async () => {
     try {
-      const res = await axios.get(`${API_URL}gestion_clientes.php?action=list`);
-      setClientes(res.data);
+      const res = await axios.get(`${API_URL}gestion_clientes.php?action=list`, { headers });
+      setClientes(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error('Error fetching clientes', error);
+      setClientes([]);
     }
   };
 
@@ -55,13 +58,13 @@ const GestionClientes = () => {
 
     try {
       const toastId = toast.loading('Consultando...');
-      let url = `${API_URL}/gestion_clientes.php?action=validate_ruc&ruc=${formData.num_doc}`;
+      let url = `${API_URL}gestion_clientes.php?action=validate_ruc&ruc=${formData.num_doc}`;
       
       if (formData.tipo_doc === '1') {
          url = `${API_URL}gestion_clientes.php?action=validate_dni&dni=${formData.num_doc}`;
       }
 
-      const res = await axios.get(url);
+      const res = await axios.get(url, { headers });
       toast.dismiss(toastId);
       
       if (res.data && (res.data.razonSocial || res.data.nombres)) { // Support both response formats if needed
@@ -88,8 +91,11 @@ const GestionClientes = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const action = formData.id ? 'update' : 'create';
-      await axios.post(`${API_URL}gestion_clientes.php?action=${action}`, formData);
+      if (formData.id) {
+        await axios.put(`${API_URL}gestion_clientes.php?action=update`, formData, { headers });
+      } else {
+        await axios.post(`${API_URL}gestion_clientes.php?action=create`, formData, { headers });
+      }
       toast.success(formData.id ? 'Cliente actualizado' : 'Cliente registrado');
       fetchClientes();
       setActiveTab('list');
@@ -107,11 +113,12 @@ const GestionClientes = () => {
   const handleHistory = async (cliente) => {
     setSelectedCliente(cliente);
     try {
-      const res = await axios.get(`${API_URL}gestion_clientes.php?action=history&num_doc=${cliente.num_doc}`);
-      setHistorial(res.data);
+      const res = await axios.get(`${API_URL}gestion_clientes.php?action=history&num_doc=${cliente.num_doc}`, { headers });
+      setHistorial(Array.isArray(res.data) ? res.data : []);
       setShowHistorialModal(true);
     } catch (error) {
       toast.error('Error al cargar historial');
+      setHistorial([]);
     }
   };
 
@@ -165,7 +172,7 @@ const GestionClientes = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {clientes.map((cliente) => (
+              {filteredClientes.map((cliente) => (
                 <tr key={cliente.id} className="hover:bg-gray-50">
                   <td className="p-4">
                     <div className="font-medium text-gray-800">{cliente.razon_social}</div>

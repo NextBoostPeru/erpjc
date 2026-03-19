@@ -105,7 +105,19 @@ function handleList($conn) {
     $totalPages = ceil($total / $limit);
 
     // Data
-    $query = "SELECT a.*, c.nombres, c.apellidos, c.documento_numero, u.usuario as validador_nombre
+    $query = "SELECT 
+                a.*,
+                c.nombres, c.apellidos, c.documento_numero,
+                u.usuario as validador_nombre,
+                CASE
+                    WHEN a.horas_extras IS NULL THEN 0
+                    WHEN a.horas_extras <= 16 THEN a.horas_extras
+                    WHEN a.horas_extras BETWEEN 100 AND 2359 AND MOD(a.horas_extras, 100) < 60
+                        THEN ROUND(LEAST((FLOOR(a.horas_extras / 100) + (MOD(a.horas_extras, 100) / 60)), 16), 2)
+                    WHEN a.horas_extras BETWEEN 60 AND 1440
+                        THEN ROUND(LEAST((a.horas_extras / 60), 16), 2)
+                    ELSE 16
+                END as horas_extras
               FROM asistencias a 
               JOIN colaboradores c ON a.colaborador_id = c.id 
               LEFT JOIN usuarios u ON a.validado_por = u.id
@@ -192,6 +204,9 @@ function handleUpdate($conn) {
     } else {
         // Edit
         $estado = $data->estado ?? 'Pendiente';
+        if ($estado === 'Asistencia') {
+            $estado = 'Pendiente';
+        }
         
         if (in_array($estado, ['Falta', 'Licencia', 'Vacaciones'])) {
              $hora_entrada = null;
@@ -209,6 +224,12 @@ function handleUpdate($conn) {
 
         $overrideOvertime = (isset($data->horas_extras) && is_numeric($data->horas_extras)) ? (float)$data->horas_extras : null;
         if ($overrideOvertime !== null) {
+            if ($overrideOvertime < 0 || $overrideOvertime > 16) {
+                http_response_code(400);
+                echo json_encode(["message" => "Horas extras fuera de rango (0 a 16)"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
             $hours['overtime'] = $overrideOvertime;
         }
 
@@ -361,6 +382,9 @@ function handleBulkSave($conn) {
 
         foreach ($data as $row) {
             $estado = $row->estado ?? 'Pendiente';
+            if ($estado === 'Asistencia') {
+                $estado = 'Pendiente';
+            }
             
             if (in_array($estado, ['Falta', 'Licencia', 'Vacaciones'])) {
                 $hora_entrada = null;
@@ -433,7 +457,17 @@ function handleMonthlyReport($conn) {
                 c.id, c.nombres, c.apellidos, c.documento_numero,
                 COALESCE(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND a.estado NOT IN ('Falta','Licencia','Vacaciones') THEN 1 ELSE 0 END), 0) as dias_trabajados,
                 COALESCE(SUM(a.horas_trabajadas), 0) as total_horas,
-                COALESCE(SUM(a.horas_extras), 0) as total_extras,
+                COALESCE(SUM(
+                    CASE
+                        WHEN a.horas_extras IS NULL THEN 0
+                        WHEN a.horas_extras <= 16 THEN a.horas_extras
+                        WHEN a.horas_extras BETWEEN 100 AND 2359 AND MOD(a.horas_extras, 100) < 60
+                            THEN LEAST((FLOOR(a.horas_extras / 100) + (MOD(a.horas_extras, 100) / 60)), 16)
+                        WHEN a.horas_extras BETWEEN 60 AND 1440
+                            THEN LEAST((a.horas_extras / 60), 16)
+                        ELSE 16
+                    END
+                ), 0) as total_extras,
                 COALESCE(SUM(CASE WHEN a.hora_entrada > '09:15:00' THEN 1 ELSE 0 END), 0) as tardanzas,
                 COALESCE(SUM(CASE WHEN a.hora_entrada IS NOT NULL AND DAYOFWEEK(a.fecha) = 1 AND a.estado NOT IN ('Falta','Licencia','Vacaciones') THEN 1 ELSE 0 END), 0) as dominicales
             FROM colaboradores c
@@ -448,29 +482,33 @@ function handleMonthlyReport($conn) {
 }
 
 function calculateHours($in, $out) {
-    if (!$out) return ['worked' => 0, 'overtime' => 0];
-    
+    if (!$in || !$out) return ['worked' => 0, 'overtime' => 0];
+
     $t1 = strtotime($in);
     $t2 = strtotime($out);
-    $diff = ($t2 - $t1) / 3600; // Hours
-    
-    if ($diff < 0) $diff = 0; // Error case
+    if ($t1 === false || $t2 === false) return ['worked' => 0, 'overtime' => 0];
 
-    // Deduct 1 hour for lunch if worked 9 hours or more
-    // This assumes a standard 1 hour break is included in the span
+    $diffSecs = $t2 - $t1;
+    if ($diffSecs < 0) $diffSecs += 24 * 3600;
+    if ($diffSecs <= 0 || $diffSecs > 18 * 3600) return ['worked' => 0, 'overtime' => 0];
+
+    $diff = $diffSecs / 3600.0;
+
     if ($diff >= 9) {
         $diff -= 1;
     }
 
     $worked = round($diff, 2);
-    $overtime = 0;
+    $overtime = 0.0;
 
-    // Standard 8 hours
     if ($worked > 8) {
         $overtime = $worked - 8;
-        $worked = 8; // Cap normal hours at 8
+        $worked = 8;
     }
-    
+
+    if ($overtime < 0) $overtime = 0.0;
+    if ($overtime > 16) $overtime = 16.0;
+
     return ['worked' => $worked, 'overtime' => round($overtime, 2)];
 }
 ?>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, Search, Plus, Edit, Trash2, FileText, CheckCircle, X, ExternalLink, Download, Phone, MapPin, Mail, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Search, Plus, Edit, Trash2, FileText, CheckCircle, X, ExternalLink, Download, Phone, MapPin, Mail, Filter, ChevronLeft, ChevronRight, Paperclip, Eye, Upload } from 'lucide-react';
 import { toast, Toaster } from 'react-hot-toast';
 import { API_URL } from '../api/config';
 import * as XLSX from 'xlsx';

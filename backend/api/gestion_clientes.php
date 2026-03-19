@@ -11,18 +11,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 try {
+    $jwtHandler = new JWTHandler();
+    $token = $jwtHandler->getBearerToken();
+    $userData = $jwtHandler->validateToken($token);
+    if (!$userData) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
+    rbac_require($conn, $userData, 'gestion_clientes', $method);
+
     switch ($method) {
         case 'GET':
             if ($action === 'list') {
                 $search = isset($_GET['search']) ? $_GET['search'] : '';
                 
                 // Optimization: Select specific columns
-                $cols = "id, tipo_doc, num_doc, razon_social, direccion, telefono, email, contacto_nombre, segmento, tipo_cliente, clasificacion, condicion_pago, estado";
+                $cols = "id, tipo_doc, num_doc, tipo_persona, razon_social, direccion, telefono, email, contacto_nombre, segmento, tipo_cliente, clasificacion, condicion_pago, estado";
                 $sql = "SELECT $cols FROM clientes";
                 
                 $where = [];

@@ -13,6 +13,11 @@ const DashboardAlmacen = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
@@ -20,7 +25,7 @@ const DashboardAlmacen = () => {
   const fetchDashboardData = async () => {
     try {
       const res = await axios.get(`${API_URL}dashboard_almacen.php`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: getAuthHeaders()
       });
       setStats(res.data);
     } catch (error) {

@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -25,6 +26,8 @@ if (!$user_data) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+rbac_require($conn, $user_data, 'kardex', $method);
 
 if ($method === 'GET') {
     try {

@@ -27,7 +27,7 @@ const ConciliacionBancaria = () => {
     const fetchCuentas = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}api/bancos.php?action=listar_cuentas`, {
+            const response = await axios.get(`${API_URL}bancos.php?action=listar_cuentas`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setCuentas(response.data);

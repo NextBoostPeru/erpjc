@@ -2,6 +2,7 @@
 require_once '../config/db.php';
 require_once '../config/jwt.php';
 require_once '../config/AuditLogger.php';
+require_once '../config/rbac.php';
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
@@ -15,14 +16,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $jwt = new JWTHandler();
-$headers = getallheaders();
-$authHeader = isset($headers['Authorization']) ? $headers['Authorization'] : '';
-$token = str_replace('Bearer ', '', $authHeader);
+$token = $jwt->getBearerToken();
 $userData = $jwt->validateToken($token);
 
 if (!$userData) {
     http_response_code(401);
     echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_ensure_roles_modulos_schema($conn);
+[, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+$required = rbac_required_perm_for_request($method);
+
+if (
+    !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'auditoria', $required)
+    && !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'AUDITORIA', $required)
+) {
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => "auditoria",
+        "permiso" => $required
+    ]);
     if (isset($conn)) $conn = null;
     exit;
 }

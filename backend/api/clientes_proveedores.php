@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -28,6 +29,9 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'clientes_proveedores', $method);
 
 $action = $_GET['action'] ?? 'listar';
 $type = $_GET['type'] ?? 'clientes'; // clientes, proveedores

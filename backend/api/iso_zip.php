@@ -1,8 +1,24 @@
 <?php
 require_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
-$empresa_id = $_GET['empresa_id'] ?? 0;
-$norma_id = $_GET['norma_id'] ?? 0;
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$token = $token ?: ($_REQUEST['token'] ?? '');
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    header("Content-Type: application/json; charset=UTF-8");
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require($conn, $userData, 'gestion_iso', 'GET', 'lectura');
+
+$empresa_id = (int)($_REQUEST['empresa_id'] ?? 0);
+$norma_id = (int)($_REQUEST['norma_id'] ?? 0);
 
 if (!$empresa_id || !$norma_id) {
     die("Empresa ID and Norma ID are required");

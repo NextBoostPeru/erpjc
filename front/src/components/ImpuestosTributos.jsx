@@ -34,7 +34,7 @@ const ImpuestosTributos = () => {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const res = await axios.get(`${API_URL}/impuestos.php?action=resumen_mensual&mes=${periodo.mes}&anio=${periodo.anio}`, {
+            const res = await axios.get(`${API_URL}impuestos.php?action=resumen_mensual&mes=${periodo.mes}&anio=${periodo.anio}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setData(res.data);
@@ -87,7 +87,7 @@ const ImpuestosTributos = () => {
                 coeficiente_renta: configTributaria.coeficiente_renta
             };
             
-            await axios.post(`${API_URL}/impuestos.php?action=guardar_determinacion`, payload, {
+            await axios.post(`${API_URL}impuestos.php?action=guardar_determinacion`, payload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             toast.success("Determinación guardada exitosamente");
@@ -100,7 +100,7 @@ const ImpuestosTributos = () => {
 
     const handleExportarPDT = async () => {
         try {
-            const res = await axios.get(`${API_URL}/impuestos.php?action=reporte_pdt&mes=${periodo.mes}&anio=${periodo.anio}`, {
+            const res = await axios.get(`${API_URL}impuestos.php?action=reporte_pdt&mes=${periodo.mes}&anio=${periodo.anio}`, {
                 headers: { Authorization: `Bearer ${token}` },
                 responseType: 'blob'
             });

@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
@@ -27,6 +28,10 @@ $method = $_SERVER['REQUEST_METHOD'];
 $data = json_decode(file_get_contents("php://input"));
 
 try {
+    if ($method !== 'GET') {
+        rbac_require($conn, $userData, 'areas', $method);
+    }
+
     switch ($method) {
         case 'GET':
             $sql = "SELECT * FROM areas ORDER BY id DESC";

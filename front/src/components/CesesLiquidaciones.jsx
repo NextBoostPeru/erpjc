@@ -24,9 +24,8 @@ const CesesLiquidaciones = () => {
 
   const fetchColaboradores = async () => {
     try {
-      const res = await axios.get(`${API_URL}/colaboradores.php`);
-      // Handle pagination structure { data: [...], pagination: ... }
-      const data = res.data.data || res.data;
+      const res = await axios.get(`${API_URL}/colaboradores.php?action=simple_list&limit=5000`);
+      const data = res.data?.data || res.data;
       setColaboradores(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching colaboradores', error);

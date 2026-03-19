@@ -709,6 +709,7 @@ const OrdenesTrabajo = () => {
                 <tr>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Fecha</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Código</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Empresa</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Título</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Prioridad</th>
                 <th className="px-6 py-4 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</th>
@@ -720,6 +721,7 @@ const OrdenesTrabajo = () => {
                 <tr key={o.id} className="hover:bg-gray-50/50 transition-colors group">
                     <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">{o.fecha}</td>
                     <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap">{o.codigo}</td>
+                    <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate" title={o.solicitante_nombre || ''}>{o.solicitante_nombre || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-800 font-medium">{o.titulo}</td>
                     <td className="px-6 py-4 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -759,10 +761,10 @@ const OrdenesTrabajo = () => {
                 </tr>
                 ))}
                 {ordenes.length === 0 && !loading && (
-                <tr><td colSpan="6" className="text-center py-12 text-gray-500">No se encontraron órdenes de trabajo</td></tr>
+                <tr><td colSpan="7" className="text-center py-12 text-gray-500">No se encontraron órdenes de trabajo</td></tr>
                 )}
                 {loading && (
-                <tr><td colSpan="6" className="text-center py-12 text-gray-500">Cargando...</td></tr>
+                <tr><td colSpan="7" className="text-center py-12 text-gray-500">Cargando...</td></tr>
                 )}
             </tbody>
             </table>

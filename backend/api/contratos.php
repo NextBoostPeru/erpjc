@@ -14,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require_once '../vendor/autoload.php';
 
 use Dompdf\Dompdf;
@@ -43,7 +44,120 @@ if (!file_exists($signatureDir)) {
     mkdir($signatureDir, 0777, true);
 }
 
+function contratos_get_colaborador_id_for_user(PDO $conn, $userData): ?int {
+    $userId = $userData->id ?? null;
+    if (!$userId) return null;
+    $stmt = $conn->prepare("SELECT id FROM colaboradores WHERE usuario_id = :uid OR email = (SELECT email FROM usuarios WHERE id = :uid2) LIMIT 1");
+    $stmt->execute([':uid' => $userId, ':uid2' => $userId]);
+    $cid = $stmt->fetchColumn();
+    return $cid ? (int)$cid : null;
+}
+
 try {
+    if ($action === 'download' && $method === 'GET' && isset($_GET['contrato_id'])) {
+        $contratoId = (int)$_GET['contrato_id'];
+        if ($contratoId <= 0) {
+            http_response_code(400);
+            echo json_encode(["error" => "contrato_id inválido"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+
+        $colaboradorId = contratos_get_colaborador_id_for_user($conn, $userData);
+        if (!$colaboradorId) {
+            http_response_code(403);
+            echo json_encode(["error" => "No autorizado"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+
+        $stmt = $conn->prepare("SELECT archivo_url FROM contratos WHERE id = ? AND colaborador_id = ? LIMIT 1");
+        $stmt->execute([$contratoId, $colaboradorId]);
+        $archivoUrl = $stmt->fetchColumn();
+
+        if (!$archivoUrl) {
+            http_response_code(404);
+            echo json_encode(["error" => "Contrato/archivo no encontrado"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+
+        $basename = basename((string)$archivoUrl);
+        $fullPath = $uploadDir . $basename;
+        $real = realpath($fullPath);
+        $realBase = realpath($uploadDir);
+        if (!$real || !$realBase || strpos($real, $realBase) !== 0 || !file_exists($real)) {
+            http_response_code(404);
+            echo json_encode(["error" => "Archivo no encontrado"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+
+        header("Content-Type: application/pdf");
+        header("Content-Length: " . filesize($real));
+        header("Cache-Control: private, max-age=60");
+        readfile($real);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
+    $signData = null;
+    if ($action === 'sign' && $method === 'POST') {
+        $signData = json_decode(file_get_contents("php://input"), true);
+
+        if (!is_array($signData) || empty($signData['id']) || empty($signData['role'])) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID y rol requeridos."]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+
+        if ($signData['role'] === 'colaborador') {
+            $contratoId = (int)$signData['id'];
+            if ($contratoId <= 0) {
+                http_response_code(400);
+                echo json_encode(["message" => "ID inválido."]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            $colaboradorId = contratos_get_colaborador_id_for_user($conn, $userData);
+            if (!$colaboradorId) {
+                http_response_code(403);
+                echo json_encode(["message" => "No autorizado"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            $stmtOwner = $conn->prepare("SELECT colaborador_id FROM contratos WHERE id = ? LIMIT 1");
+            $stmtOwner->execute([$contratoId]);
+            $ownerId = (int)$stmtOwner->fetchColumn();
+
+            if (!$ownerId) {
+                http_response_code(404);
+                echo json_encode(["message" => "Contrato no encontrado"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            if ($ownerId !== $colaboradorId) {
+                http_response_code(403);
+                echo json_encode(["message" => "No autorizado"]);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            $now = date('Y-m-d H:i:s');
+            $stmtUp = $conn->prepare("UPDATE contratos SET firma_colaborador = :now WHERE id = :id");
+            $stmtUp->execute([':now' => $now, ':id' => $contratoId]);
+            echo json_encode(["message" => "Contrato firmado correctamente."]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+    }
+
+    rbac_require($conn, $userData, 'gestion_contratos', $method);
+
     // Ensure regimen_pensionario column exists
     try {
         $chk = $conn->query("SHOW COLUMNS FROM contratos LIKE 'regimen_pensionario'");
@@ -65,6 +179,27 @@ try {
             $conn->exec("ALTER TABLE contratos ADD COLUMN afp_cuspp VARCHAR(20) NULL AFTER asignacion_familiar");
         }
     } catch (Exception $e) {}
+
+    $conn->exec("
+        UPDATE contratos
+        SET estado = 'Vigente'
+        WHERE estado <> 'Finalizado'
+          AND (fecha_fin IS NULL OR fecha_fin > DATE_ADD(CURDATE(), INTERVAL 30 DAY))
+    ");
+    $conn->exec("
+        UPDATE contratos
+        SET estado = 'Por Vencer'
+        WHERE estado <> 'Finalizado'
+          AND fecha_fin IS NOT NULL
+          AND fecha_fin BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+    ");
+    $conn->exec("
+        UPDATE contratos
+        SET estado = 'Vencido'
+        WHERE estado <> 'Finalizado'
+          AND fecha_fin IS NOT NULL
+          AND fecha_fin < CURDATE()
+    ");
     if ($action === 'download' && $method === 'GET') {
         $reqPath = $_GET['file'] ?? '';
         if (!$reqPath) {
@@ -212,7 +347,13 @@ try {
         $area = !empty($data['area']) ? $data['area'] : ($colab['area'] ?? 'NO ASIGNADA');
         $horas_trabajo = !empty($data['horas_trabajo']) ? $data['horas_trabajo'] : '48 horas semanales';
         
-        $colab_nombre_completo = !empty($data['nombres']) ? $data['nombres'] : ($colab['nombres'] . ' ' . $colab['apellidos']);
+        $inputNombres = isset($data['nombres']) ? trim((string)$data['nombres']) : '';
+        $inputApellidos = isset($data['apellidos']) ? trim((string)$data['apellidos']) : '';
+        if ($inputNombres !== '' || $inputApellidos !== '') {
+            $colab_nombre_completo = trim($inputNombres . ' ' . ($inputApellidos !== '' ? $inputApellidos : (string)($colab['apellidos'] ?? '')));
+        } else {
+            $colab_nombre_completo = trim((string)($colab['nombres'] ?? '') . ' ' . (string)($colab['apellidos'] ?? ''));
+        }
         $colab_dni = !empty($data['dni']) ? $data['dni'] : $colab['documento_numero'];
         $colab_direccion = !empty($data['direccion']) ? $data['direccion'] : ($colab['direccion'] ?? 'Domicilio no registrado');
         
@@ -226,15 +367,58 @@ try {
             $empresa = [];
         }
 
-        // Fetch Manager (Gerente) - Role ID 7
-        $gerenteQuery = "SELECT c.nombres, c.apellidos FROM colaboradores c
-                         JOIN usuarios u ON c.usuario_id = u.id
-                         WHERE u.rol_id = 7 AND u.status = 'activo' LIMIT 1";
-        $gerenteStmt = $conn->prepare($gerenteQuery);
-        $gerenteStmt->execute();
-        $gerente = $gerenteStmt->fetch(PDO::FETCH_ASSOC);
-        
-        $nombre_gerente = $gerente ? ($gerente['nombres'] . ' ' . $gerente['apellidos']) : ($empresa['representante_legal'] ?? 'Representante no configurado');
+        $nombre_gerente = null;
+        try {
+            $gerenteQuery = "
+                SELECT c.nombres, c.apellidos
+                FROM colaboradores c
+                JOIN usuarios u ON c.usuario_id = u.id
+                JOIN roles r ON r.id = u.rol_id
+                WHERE u.status = 'activo'
+                  AND (u.rol_id = 7 OR LOWER(r.nombre) LIKE '%geren%')
+                ORDER BY (u.rol_id = 7) DESC, u.id DESC
+                LIMIT 1
+            ";
+            $gerenteStmt = $conn->prepare($gerenteQuery);
+            $gerenteStmt->execute();
+            $gerente = $gerenteStmt->fetch(PDO::FETCH_ASSOC);
+            if ($gerente && (!empty($gerente['nombres']) || !empty($gerente['apellidos']))) {
+                $nombre_gerente = trim(($gerente['nombres'] ?? '') . ' ' . ($gerente['apellidos'] ?? ''));
+            }
+        } catch (Throwable $e) {
+        }
+
+        if (!$nombre_gerente) {
+            try {
+                $userGerenteQuery = "
+                    SELECT u.nombre_real, u.usuario
+                    FROM usuarios u
+                    JOIN roles r ON r.id = u.rol_id
+                    WHERE u.status = 'activo'
+                      AND (u.rol_id = 7 OR LOWER(r.nombre) LIKE '%geren%')
+                    ORDER BY (u.rol_id = 7) DESC, u.id DESC
+                    LIMIT 1
+                ";
+                $st = $conn->prepare($userGerenteQuery);
+                $st->execute();
+                $urow = $st->fetch(PDO::FETCH_ASSOC);
+                $nombre_gerente = trim((string)($urow['nombre_real'] ?? $urow['usuario'] ?? '')) ?: null;
+            } catch (Throwable $e) {
+            }
+        }
+
+        if (!$nombre_gerente) {
+            foreach (['representante_legal', 'representante_legal_nombre', 'nombre_representante', 'representante', 'gerente', 'gerente_nombre'] as $k) {
+                if (!empty($empresa[$k])) {
+                    $nombre_gerente = trim((string)$empresa[$k]);
+                    break;
+                }
+            }
+        }
+
+        if (!$nombre_gerente) {
+            $nombre_gerente = 'Representante no consignado';
+        }
 
         // Fill defaults if keys missing
         $empresa['razon_social'] = $empresa['razon_social'] ?? 'EMPRESA NO CONFIGURADA';
@@ -267,6 +451,9 @@ try {
         if ($template) {
             // Use DB Template
             $titulo_contrato = $template['nombre'];
+            if (mb_strtoupper(trim((string)$titulo_contrato), 'UTF-8') === 'CONTRATO FIJO') {
+                $titulo_contrato = 'CONTRATO DE TRABAJO SUJETO A MODALIDAD POR NECESIDADES DEL MERCADO';
+            }
             
             // Adjust denominations based on type if needed
             if (stripos($tipo, 'locación') !== false || stripos($tipo, 'locacion') !== false) {
@@ -288,10 +475,12 @@ try {
                 '{{SALARIO}}' => number_format($data['salario'], 2),
                 '{{FECHA_INICIO}}' => $data['fecha_inicio'],
                 '{{FECHA_FIN}}' => $data['fecha_fin'] ?? 'indefinido',
-                '{{TITULO_CONTRATO}}' => $template['nombre'],
+                '{{TITULO_CONTRATO}}' => $titulo_contrato,
                 '{{DENOMINACION_EMPLEADOR}}' => $denominacion_empleador,
                 '{{DENOMINACION_COLABORADOR}}' => $denominacion_colaborador,
                 '{{NOMBRE_GERENTE}}' => $nombre_gerente,
+                '{{REPRESENTANTE_LEGAL}}' => $nombre_gerente,
+                '{{NOMBRE_REPRESENTANTE}}' => $nombre_gerente,
                 '{{RAZON_SOCIAL_EMPRESA}}' => $empresa['razon_social'],
                 '{{RUC_EMPRESA}}' => $empresa['ruc'],
                 '{{DIRECCION_EMPRESA}}' => $empresa['direccion'],
@@ -362,6 +551,12 @@ try {
             <div class='footer'>
                 Documento generado electrónicamente el " . date('d/m/Y') . " a las " . date('H:i:s') . "
             </div>";
+
+        $body_content = str_ireplace(
+            'CONTRATO FIJO',
+            'CONTRATO DE TRABAJO SUJETO A MODALIDAD POR NECESIDADES DEL MERCADO',
+            $body_content
+        );
 
         // Prepare HTML Content
         $html = "
@@ -451,18 +646,22 @@ try {
         exit;
 
     } elseif ($action === 'sign' && $method === 'POST') {
-        $data = json_decode(file_get_contents("php://input"), true);
-        
-        if (empty($data['id']) || empty($data['role'])) {
+        $data = $signData;
+
+        if (!is_array($data) || empty($data['id']) || empty($data['role'])) {
             if (isset($conn)) $conn = null;
             throw new Exception("ID y rol requeridos.");
         }
 
-        $field = ($data['role'] === 'gerencia') ? 'firma_gerencia' : 'firma_colaborador';
-        $now = date('Y-m-d H:i:s');
+        if ($data['role'] !== 'gerencia') {
+            http_response_code(403);
+            echo json_encode(["message" => "No autorizado"]);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
 
-        $sql = "UPDATE contratos SET $field = :now WHERE id = :id";
-        $stmt = $conn->prepare($sql);
+        $now = date('Y-m-d H:i:s');
+        $stmt = $conn->prepare("UPDATE contratos SET firma_gerencia = :now WHERE id = :id");
         $stmt->execute([':now' => $now, ':id' => $data['id']]);
 
         echo json_encode(["message" => "Contrato firmado correctamente."]);
@@ -492,13 +691,14 @@ try {
             $search = isset($_GET['search']) ? $_GET['search'] : '';
             $filterStatus = isset($_GET['status']) ? $_GET['status'] : '';
             $filterArea = isset($_GET['area']) ? $_GET['area'] : '';
+            $colaboradorId = isset($_GET['colaborador_id']) ? (int)$_GET['colaborador_id'] : 0;
 
             // Base SQL
             $whereSQL = "WHERE 1=1";
             $params = [];
 
             if (!empty($search)) {
-                $whereSQL .= " AND (c.nombres LIKE :search OR c.apellidos LIKE :search OR co.tipo_contrato LIKE :search)";
+                $whereSQL .= " AND (c.nombres LIKE :search OR c.apellidos LIKE :search OR c.documento_numero LIKE :search OR co.tipo_contrato LIKE :search)";
                 $params[':search'] = "%$search%";
             }
             if (!empty($filterStatus)) {
@@ -508,6 +708,10 @@ try {
             if (!empty($filterArea)) {
                 $whereSQL .= " AND co.area = :area";
                 $params[':area'] = $filterArea;
+            }
+            if ($colaboradorId > 0) {
+                $whereSQL .= " AND co.colaborador_id = :colaborador_id";
+                $params[':colaborador_id'] = $colaboradorId;
             }
 
             // Alerts logic: Contracts expiring in 30 days
@@ -526,11 +730,15 @@ try {
             $totalPages = ceil($total / $limit);
 
             // Fetch
+            $orderBy = "co.estado = 'Por Vencer' DESC, co.fecha_fin ASC";
+            if ($colaboradorId > 0) {
+                $orderBy = "co.id DESC";
+            }
             $query = "SELECT co.*, c.nombres, c.apellidos, c.documento_numero 
                       FROM contratos co
                       JOIN colaboradores c ON co.colaborador_id = c.id
                       $whereSQL
-                      ORDER BY co.estado = 'Por Vencer' DESC, co.fecha_fin ASC
+                      ORDER BY $orderBy
                       LIMIT :limit OFFSET :offset";
             
             $stmt = $conn->prepare($query);
@@ -636,6 +844,25 @@ try {
                     if (isset($conn)) $conn = null;
                     exit;
                 }
+
+                $stmt = $conn->prepare("
+                    UPDATE contratos
+                    SET
+                      estado = 'Finalizado',
+                      fecha_fin = CASE
+                        WHEN fecha_fin IS NULL OR fecha_fin >= :new_start
+                          THEN DATE_SUB(:new_start, INTERVAL 1 DAY)
+                        ELSE fecha_fin
+                      END
+                    WHERE colaborador_id = :colab_id
+                      AND estado <> 'Finalizado'
+                      AND fecha_inicio < :new_start
+                      AND (fecha_fin IS NULL OR fecha_fin >= :new_start)
+                ");
+                $stmt->execute([
+                    ':new_start' => $data['fecha_inicio'],
+                    ':colab_id' => $data['colaborador_id']
+                ]);
 
                 // File Upload
                 $archivo_url = null;

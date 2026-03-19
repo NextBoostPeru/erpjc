@@ -11,40 +11,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? '';
+
+$jwt = new JWTHandler();
+$token = $jwt->getBearerToken();
+$userData = $jwt->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
 
 try {
     switch ($method) {
         case 'GET':
-            if (isset($_GET['action']) && $_GET['action'] === 'approvers') {
+            if ($action === 'approvers') {
+                rbac_require($conn, $userData, 'permisos', 'GET', 'lectura');
                 ensureApproverTable($conn);
                 handleApproversList($conn);
+            } elseif ($action === 'my_approval_rights') {
+                ensureApproverTable($conn);
+                handleMyApprovalRights($conn, $userData);
             } elseif (isset($_GET['balance']) && isset($_GET['colaborador_id'])) {
+                requireVacacionesOrApprover($conn, $userData, 'lectura');
                 handleGetBalance($conn);
             } else {
+                requireVacacionesOrApprover($conn, $userData, 'lectura');
                 handleList($conn);
             }
             break;
 
         case 'POST':
-            if (isset($_GET['action']) && $_GET['action'] === 'approvers') {
+            if ($action === 'approvers') {
+                rbac_require($conn, $userData, 'permisos', 'POST', 'editar');
                 ensureApproverTable($conn);
                 handleApproverCreate($conn);
             } else {
+                rbac_require($conn, $userData, 'vacaciones_permisos', 'POST');
                 handleCreate($conn);
             }
             break;
 
         case 'PUT':
-            handleUpdate($conn);
+            $raw = file_get_contents("php://input");
+            $payload = json_decode($raw);
+            if (isset($payload->action) && in_array($payload->action, ['approve_rrhh', 'approve_gerente', 'reject'])) {
+                handleUpdate($conn, $userData, $payload);
+            } else {
+                rbac_require($conn, $userData, 'vacaciones_permisos', 'PUT');
+                handleUpdate($conn, $userData, $payload);
+            }
             break;
 
         case 'DELETE':
-            if (isset($_GET['action']) && $_GET['action'] === 'approvers') {
+            if ($action === 'approvers') {
+                rbac_require($conn, $userData, 'permisos', 'DELETE', 'editar');
                 ensureApproverTable($conn);
                 handleApproverDelete($conn);
             } else {
+                rbac_require($conn, $userData, 'vacaciones_permisos', 'DELETE');
                 handleDelete($conn);
             }
             break;
@@ -154,8 +183,10 @@ function handleCreate($conn) {
     echo json_encode(["message" => "Solicitud creada exitosamente"]);
 }
 
-function handleUpdate($conn) {
-    $data = json_decode(file_get_contents("php://input"));
+function handleUpdate($conn, $userData, $data = null) {
+    if ($data === null) {
+        $data = json_decode(file_get_contents("php://input"));
+    }
     
     if (empty($data->id)) {
         http_response_code(400);
@@ -164,34 +195,36 @@ function handleUpdate($conn) {
     }
 
     $id = $data->id;
+    [$currentUserId, $currentRoleId, $currentRoleName] = rbac_get_user_role($conn, $userData);
 
     // SCENARIO 1: Status Update (Approve/Reject)
     if (isset($data->action) && in_array($data->action, ['approve_rrhh', 'approve_gerente', 'reject'])) {
-        if (empty($data->user_id)) {
-            http_response_code(400);
-            echo json_encode(["message" => "Falta User ID"]);
+        if (!$currentUserId) {
+            http_response_code(401);
+            echo json_encode(["message" => "Acceso no autorizado"]);
             return;
         }
-        $uid = $data->user_id;
+        $uid = (int)$currentUserId;
         $action = $data->action;
 
         try {
+            ensureApproverTable($conn);
             // Permission check
             if ($action === 'approve_rrhh') {
-                if (!hasApprovalRight($conn, $uid, 'RRHH')) {
+                if (!hasApprovalRight($conn, $uid, (int)$currentRoleId, 'RRHH')) {
                     http_response_code(403);
                     echo json_encode(["message" => "No autorizado para aprobar como RRHH"]);
                     return;
                 }
             } elseif ($action === 'approve_gerente') {
-                if (!hasApprovalRight($conn, $uid, 'Gerente')) {
+                if (!hasApprovalRight($conn, $uid, (int)$currentRoleId, 'Gerente')) {
                     http_response_code(403);
                     echo json_encode(["message" => "No autorizado para aprobación final"]);
                     return;
                 }
             } elseif ($action === 'reject') {
                 // Allow reject if user has either RRHH or Gerente rights
-                if (!hasApprovalRight($conn, $uid, 'RRHH') && !hasApprovalRight($conn, $uid, 'Gerente')) {
+                if (!hasApprovalRight($conn, $uid, (int)$currentRoleId, 'RRHH') && !hasApprovalRight($conn, $uid, (int)$currentRoleId, 'Gerente')) {
                     http_response_code(403);
                     echo json_encode(["message" => "No autorizado para rechazar"]);
                     return;
@@ -347,6 +380,31 @@ function handleGetBalance($conn) {
     echo json_encode($balance);
 }
 
+function requireVacacionesOrApprover($conn, $userData, string $perm): void {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+
+    if (rbac_can($conn, (int)$rolId, (string)$rolNombre, 'vacaciones_permisos', $perm)) {
+        return;
+    }
+
+    $uid = (int)$userId;
+    $rid = (int)$rolId;
+    if ($uid && (hasApprovalRight($conn, $uid, $rid, 'RRHH') || hasApprovalRight($conn, $uid, $rid, 'Gerente'))) {
+        return;
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => "vacaciones_permisos",
+        "permiso" => $perm
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
 function calculateBalance($conn, $colaborador_id) {
     // 1. Get Start Date
     $stmt = $conn->prepare("SELECT fecha_ingreso FROM colaboradores WHERE id = ?");
@@ -461,16 +519,38 @@ function handleApproverDelete($conn) {
     echo json_encode(["message" => "Aprobador eliminado"]);
 }
 
-function hasApprovalRight($conn, $usuario_id, $nivel) {
-    $q = $conn->prepare("SELECT r.nombre AS rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = ?");
-    $q->execute([$usuario_id]);
-    $u = $q->fetch(PDO::FETCH_ASSOC);
-    $rolNombre = strtolower($u['rol_nombre'] ?? '');
-    if ($nivel === 'RRHH') {
-        return $rolNombre === 'rrhh';
-    } elseif ($nivel === 'Gerente') {
-        return $rolNombre === 'gerente' || $rolNombre === 'gerencia';
+function hasApprovalRight($conn, int $usuario_id, int $rol_id, string $nivel): bool {
+    ensureApproverTable($conn);
+    $stmt = $conn->prepare("
+        SELECT COUNT(*)
+        FROM vacaciones_aprobadores
+        WHERE activo = 1
+          AND nivel = :nivel
+          AND (
+                usuario_id = :uid
+                OR (rol_id IS NOT NULL AND rol_id = :rid)
+          )
+    ");
+    $stmt->execute([
+        ':nivel' => $nivel,
+        ':uid' => $usuario_id,
+        ':rid' => $rol_id
+    ]);
+    return ((int)$stmt->fetchColumn()) > 0;
+}
+
+function handleMyApprovalRights($conn, $userData) {
+    [$currentUserId, $currentRoleId] = rbac_get_user_role($conn, $userData);
+    $uid = (int)$currentUserId;
+    $rid = (int)$currentRoleId;
+    if (!$uid) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        return;
     }
-    return false;
+    echo json_encode([
+        "rrhh" => hasApprovalRight($conn, $uid, $rid, 'RRHH') ? 1 : 0,
+        "gerente" => hasApprovalRight($conn, $uid, $rid, 'Gerente') ? 1 : 0
+    ]);
 }
 ?>

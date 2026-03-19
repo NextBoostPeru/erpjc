@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -12,13 +13,8 @@ if (!$userData) {
     exit;
 }
 
-// Basic RBAC check
-$rol = strtolower($userData->rol_nombre ?? '');
-if (strpos($rol, 'admin') === false && strpos($rol, 'gerente') === false) {
-    http_response_code(403);
-    echo json_encode(["message" => "Permiso denegado"]);
-    exit;
-}
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'supervision_financiera', $method);
 
 $action = $_GET['action'] ?? '';
 $start = $_GET['start'] ?? date('Y-01-01');
@@ -47,15 +43,27 @@ try {
             // 3. Expenses (Gastos) from Caja
             // Assuming negative movements in Caja that are NOT simple transfers or payments to suppliers (if distinguishable)
             // Since we don't have detailed expense classification yet, we'll use a placeholder or specific types if available
-            // Let's assume 'Salida' in caja_movimientos excluding 'Deposito'
+            // Let's assume 'Egreso' in caja_movimientos
             $sqlExpenses = "SELECT SUM(monto) as total FROM caja_movimientos 
-                            WHERE tipo = 'Salida' AND fecha BETWEEN :start AND :end";
+                            WHERE tipo = 'Egreso' AND fecha BETWEEN :start AND :end";
              // Note: This double counts if we pay suppliers via caja.
              // Ideally Expenses = Planillas + Servicios + Alquileres etc.
              // For now, let's keep it simple: Sales - Purchases (Gross Profit) - 10% Overhead (Simulated)
             
             $grossProfit = $sales - $cogs;
-            $expenses = $grossProfit * 0.15; // Simulated Overhead
+            
+            // Execute expenses query
+            $stmt = $conn->prepare($sqlExpenses);
+            $stmt->execute([':start' => $start, ':end' => $end]);
+            $realExpenses = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+            
+            // If real expenses are too low (e.g. no data), fallback to simulation for demo
+            if ($realExpenses < $grossProfit * 0.01) {
+                $expenses = $grossProfit * 0.15; 
+            } else {
+                $expenses = $realExpenses;
+            }
+
             $netIncome = $grossProfit - $expenses;
 
             echo json_encode([
@@ -71,8 +79,13 @@ try {
             // Balance General (Snapshot)
             
             // Assets
-            // 1. Cash (Caja)
-            $stmt = $conn->query("SELECT SUM(saldo) as total FROM cajas");
+            // 1. Cash (Caja) - Calculated from movements since 'cajas' table might not exist
+            // Total Cash = Sum(Ingresos) - Sum(Egresos)
+            $sqlCash = "SELECT (
+                        (SELECT COALESCE(SUM(monto),0) FROM caja_movimientos WHERE tipo = 'Ingreso') - 
+                        (SELECT COALESCE(SUM(monto),0) FROM caja_movimientos WHERE tipo = 'Egreso')
+                        ) as total";
+            $stmt = $conn->query($sqlCash);
             $cash = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
             
             // 2. AR (Cuentas por Cobrar)
@@ -155,7 +168,11 @@ try {
             $cumulative = 0; // Should start with current cash balance
 
             // Get current cash
-            $stmt = $conn->query("SELECT SUM(saldo) as total FROM cajas");
+            $sqlCash = "SELECT (
+                (SELECT COALESCE(SUM(monto),0) FROM caja_movimientos WHERE tipo = 'Ingreso') - 
+                (SELECT COALESCE(SUM(monto),0) FROM caja_movimientos WHERE tipo = 'Egreso')
+                ) as total";
+            $stmt = $conn->query($sqlCash);
             $currentCash = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
             $cumulative = $currentCash;
 
@@ -209,7 +226,11 @@ try {
              // Leverage = Pasivo Total / Activo Total
              
              // Reuse logic from balance
-             $stmt = $conn->query("SELECT SUM(saldo) as total FROM cajas");
+             $sqlCash = "SELECT (
+                (SELECT COALESCE(SUM(monto),0) FROM caja_movimientos WHERE tipo = 'Ingreso') - 
+                (SELECT COALESCE(SUM(monto),0) FROM caja_movimientos WHERE tipo = 'Egreso')
+                ) as total";
+             $stmt = $conn->query($sqlCash);
              $cash = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
              $sqlAR = "SELECT SUM(saldo_pendiente) as total FROM comprobantes_electronicos WHERE estado_cobro != 'Pagado' AND estado != 'Anulado'";
              $stmt = $conn->query($sqlAR);

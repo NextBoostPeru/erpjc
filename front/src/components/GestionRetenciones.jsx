@@ -30,7 +30,9 @@ const SearchClientModal = ({ isOpen, onClose, onSelect }) => {
     const search = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`${API_URL}facturacion.php?action=buscar_clientes&q=${term}`);
+            const token = localStorage.getItem('token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            const res = await axios.get(`${API_URL}facturacion.php?action=buscar_clientes&q=${term}`, { headers });
             setResults(res.data);
         } catch (error) {
             console.error("Error buscando clientes", error);

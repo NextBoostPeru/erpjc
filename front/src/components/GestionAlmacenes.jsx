@@ -80,7 +80,7 @@ const GestionAlmacenes = () => {
       // Asumiendo que existe un endpoint de usuarios o similar, o usamos una lista dummy si no hay acceso
       // Si el rol almacen no tiene acceso a usuarios, esto podría fallar.
       // Intentaremos obtener usuarios, si falla usaremos lista vacía.
-      const res = await axios.get(`${API_URL}/usuarios.php`, { headers });
+      const res = await axios.get(`${API_URL}usuarios.php`, { headers });
       // El endpoint puede devolver un array directo o un objeto { users: [], roles: [] }
       if (res.data.users) {
         setUsuarios(res.data.users);
@@ -106,7 +106,7 @@ const GestionAlmacenes = () => {
         await axios.put(`${API_URL}almacenes.php?id=${currentAlmacen.id}`, data, { headers });
         toast.success('Almacén actualizado');
       } else {
-        await axios.post(`${API_URL}/almacenes.php`, data, { headers });
+        await axios.post(`${API_URL}almacenes.php`, data, { headers });
         toast.success('Almacén creado');
       }
       setShowModal(false);
@@ -135,7 +135,7 @@ const GestionAlmacenes = () => {
         await axios.delete(`${API_URL}almacenes.php?id=${itemToDelete.data.id}`, { headers });
         toast.success('Almacén eliminado');
       } else {
-        await axios.delete(`${API_URL}/almacenes.php?resource=ubicaciones&id=${itemToDelete.data.id}`, { headers });
+        await axios.delete(`${API_URL}almacenes.php?resource=ubicaciones&id=${itemToDelete.data.id}`, { headers });
         toast.success('Ubicación eliminada');
       }
       fetchData();
@@ -173,7 +173,7 @@ const GestionAlmacenes = () => {
   const handleDeleteUbicacion = async (id) => {
     if (!window.confirm('¿Estás seguro de eliminar esta ubicación?')) return;
     try {
-      await axios.delete(`${API_URL}/almacenes.php?resource=ubicaciones&id=${id}`, { headers });
+      await axios.delete(`${API_URL}almacenes.php?resource=ubicaciones&id=${id}`, { headers });
       toast.success('Ubicación eliminada');
       fetchData();
     } catch (error) {

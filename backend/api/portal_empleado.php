@@ -23,6 +23,8 @@ if (!$userData) {
     exit;
 }
 
+$method = $_SERVER['REQUEST_METHOD'];
+
 $userId = $userData->id;
 $action = $_GET['action'] ?? 'profile';
 
@@ -91,15 +93,24 @@ try {
             if (empty($input['fecha_inicio']) || empty($input['fecha_fin'])) {
                 throw new Exception("Fechas requeridas");
             }
+
+            $start = new DateTime($input['fecha_inicio']);
+            $end = new DateTime($input['fecha_fin']);
+            $diff = $start->diff($end);
+            $dias = $diff->days + 1;
+            if ($dias <= 0) {
+                throw new Exception("Fechas inválidas");
+            }
             
             // Insert Request
-            $sql = "INSERT INTO solicitudes_permisos (colaborador_id, tipo, fecha_inicio, fecha_fin, motivo, estado) 
-                    VALUES (:cid, 'Vacaciones', :inicio, :fin, :motivo, 'pendiente')";
+            $sql = "INSERT INTO solicitudes_permisos (colaborador_id, tipo, fecha_inicio, fecha_fin, dias, motivo, estado) 
+                    VALUES (:cid, 'Vacaciones', :inicio, :fin, :dias, :motivo, 'Pendiente')";
             $stmt = $conn->prepare($sql);
             $stmt->execute([
                 ':cid' => $colaboradorId,
                 ':inicio' => $input['fecha_inicio'],
                 ':fin' => $input['fecha_fin'],
+                ':dias' => $dias,
                 ':motivo' => $input['motivo'] ?? 'Solicitud desde Portal'
             ]);
             

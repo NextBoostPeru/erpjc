@@ -877,100 +877,103 @@ function crearComprobanteElectronico($conn, $data, $userData) {
     $emp_ruc = $empresa['ruc'] ?? '20000000001';
     $emp_razon = $empresa['razon_social'] ?? 'EMPRESA DEMO';
 
-    $filename = "{$emp_ruc}-{$data['tipo_comprobante']}-{$data['serie']}-{$correlativo}";
-    
-    $rootTag = "Invoice";
-    if ($data['tipo_comprobante'] == '07') $rootTag = "CreditNote";
-    if ($data['tipo_comprobante'] == '08') $rootTag = "DebitNote";
+    if ($estado != 'Borrador') {
+        $filename = "{$emp_ruc}-{$data['tipo_comprobante']}-{$data['serie']}-{$correlativo}";
+        
+        $rootTag = "Invoice";
+        if ($data['tipo_comprobante'] == '07') $rootTag = "CreditNote";
+        if ($data['tipo_comprobante'] == '08') $rootTag = "DebitNote";
 
-    $xmlContent = "<{$rootTag} xmlns='urn:oasis:names:specification:ubl:schema:xsd:{$rootTag}-2'>
-        <UBLVersionID>2.1</UBLVersionID>
-        <CustomizationID>2.0</CustomizationID>
-        <ID>{$data['serie']}-{$correlativo}</ID>
-        <IssueDate>{$fecha_emision}</IssueDate>
-        <IssueTime>" . date('H:i:s') . "</IssueTime>
-        <Note languageLocaleID='1000'>{$data['total_importe']}</Note>
-        <DocumentCurrencyCode>{$data['moneda']}</DocumentCurrencyCode>";
-    
-    if (in_array($data['tipo_comprobante'], ['07', '08'])) {
+        $xmlContent = "<{$rootTag} xmlns='urn:oasis:names:specification:ubl:schema:xsd:{$rootTag}-2'>
+            <UBLVersionID>2.1</UBLVersionID>
+            <CustomizationID>2.0</CustomizationID>
+            <ID>{$data['serie']}-{$correlativo}</ID>
+            <IssueDate>{$fecha_emision}</IssueDate>
+            <IssueTime>" . date('H:i:s') . "</IssueTime>
+            <Note languageLocaleID='1000'>{$data['total_importe']}</Note>
+            <DocumentCurrencyCode>{$data['moneda']}</DocumentCurrencyCode>";
+        
+        if (in_array($data['tipo_comprobante'], ['07', '08'])) {
+            $xmlContent .= "
+            <DiscrepancyResponse>
+                <ReferenceID>{$full_ref_number}</ReferenceID>
+                <ResponseCode>{$data['motivo_emision']}</ResponseCode>
+                <Description>{$data['motivo_descripcion']}</Description>
+            </DiscrepancyResponse>
+            <BillingReference>
+                <InvoiceDocumentReference>
+                    <ID>{$full_ref_number}</ID>
+                    <DocumentTypeCode>{$doc_ref_tipo}</DocumentTypeCode>
+                </InvoiceDocumentReference>
+            </BillingReference>";
+        }
+
         $xmlContent .= "
-        <DiscrepancyResponse>
-            <ReferenceID>{$full_ref_number}</ReferenceID>
-            <ResponseCode>{$data['motivo_emision']}</ResponseCode>
-            <Description>{$data['motivo_descripcion']}</Description>
-        </DiscrepancyResponse>
-        <BillingReference>
-            <InvoiceDocumentReference>
-                <ID>{$full_ref_number}</ID>
-                <DocumentTypeCode>{$doc_ref_tipo}</DocumentTypeCode>
-            </InvoiceDocumentReference>
-        </BillingReference>";
-    }
-
-    $xmlContent .= "
-        <Signature>
-            <ID>IDSignKG</ID>
-            <SignatoryParty>
-                <PartyIdentification>
-                    <ID>{$emp_ruc}</ID>
-                </PartyIdentification>
-                <PartyName>
-                    <Name>{$emp_razon}</Name>
-                </PartyName>
-            </SignatoryParty>
-            <DigitalSignatureAttachment>
-                <ExternalReference>
-                    <URI>#SignatureKG</URI>
-                </ExternalReference>
-            </DigitalSignatureAttachment>
-        </Signature>
-        <AccountingSupplierParty>
-            <Party>
-                <PartyIdentification>
-                    <ID schemeID='6'>{$emp_ruc}</ID>
-                </PartyIdentification>
-                <PartyLegalEntity>
-                    <RegistrationName>{$emp_razon}</RegistrationName>
-                </PartyLegalEntity>
-            </Party>
-        </AccountingSupplierParty>
-        <AccountingCustomerParty>
-            <Party>
-                <PartyIdentification>
-                    <ID schemeID='{$data['cliente_tipo_doc']}'>{$data['cliente_num_doc']}</ID>
-                </PartyIdentification>
-                <PartyLegalEntity>
-                    <RegistrationName>{$data['cliente_razon_social']}</RegistrationName>
-                </PartyLegalEntity>
-            </Party>
-        </AccountingCustomerParty>
-        <TaxTotal>
-            <TaxAmount currencyID='{$data['moneda']}'>{$data['total_igv']}</TaxAmount>
-            <TaxSubtotal>
-                <TaxableAmount currencyID='{$data['moneda']}'>{$data['total_gravada']}</TaxableAmount>
+            <Signature>
+                <ID>IDSignKG</ID>
+                <SignatoryParty>
+                    <PartyIdentification>
+                        <ID>{$emp_ruc}</ID>
+                    </PartyIdentification>
+                    <PartyName>
+                        <Name>{$emp_razon}</Name>
+                    </PartyName>
+                </SignatoryParty>
+                <DigitalSignatureAttachment>
+                    <ExternalReference>
+                        <URI>#SignatureKG</URI>
+                    </ExternalReference>
+                </DigitalSignatureAttachment>
+            </Signature>
+            <AccountingSupplierParty>
+                <Party>
+                    <PartyIdentification>
+                        <ID schemeID='6'>{$emp_ruc}</ID>
+                    </PartyIdentification>
+                    <PartyLegalEntity>
+                        <RegistrationName>{$emp_razon}</RegistrationName>
+                    </PartyLegalEntity>
+                </Party>
+            </AccountingSupplierParty>
+            <AccountingCustomerParty>
+                <Party>
+                    <PartyIdentification>
+                        <ID schemeID='{$data['cliente_tipo_doc']}'>{$data['cliente_num_doc']}</ID>
+                    </PartyIdentification>
+                    <PartyLegalEntity>
+                        <RegistrationName>{$data['cliente_razon_social']}</RegistrationName>
+                    </PartyLegalEntity>
+                </Party>
+            </AccountingCustomerParty>
+            <TaxTotal>
                 <TaxAmount currencyID='{$data['moneda']}'>{$data['total_igv']}</TaxAmount>
-                <TaxCategory>
-                    <TaxScheme>
-                        <ID>1000</ID>
-                        <Name>IGV</Name>
-                        <TaxTypeCode>VAT</TaxTypeCode>
-                    </TaxScheme>
-                </TaxCategory>
-            </TaxSubtotal>
-        </TaxTotal>
-        <LegalMonetaryTotal>
-            <PayableAmount currencyID='{$data['moneda']}'>{$data['total_importe']}</PayableAmount>
-        </LegalMonetaryTotal>
-    </{$rootTag}>";
-    
-    // Fix XML Path
-    $xmlPath = __DIR__ . '/../../xml/' . $filename . '.xml';
-    file_put_contents($xmlPath, $xmlContent);
-    
-    // Update DB with relative path
-    $dbXmlPath = "xml/{$filename}.xml";
-    $conn->prepare("UPDATE comprobantes_electronicos SET xml_path = :path WHERE id = :id")
-         ->execute([':path' => $dbXmlPath, ':id' => $comprobante_id]);
+                <TaxSubtotal>
+                    <TaxableAmount currencyID='{$data['moneda']}'>{$data['total_gravada']}</TaxableAmount>
+                    <TaxAmount currencyID='{$data['moneda']}'>{$data['total_igv']}</TaxAmount>
+                    <TaxCategory>
+                        <TaxScheme>
+                            <ID>1000</ID>
+                            <Name>IGV</Name>
+                            <TaxTypeCode>VAT</TaxTypeCode>
+                        </TaxScheme>
+                    </TaxCategory>
+                </TaxSubtotal>
+            </TaxTotal>
+            <LegalMonetaryTotal>
+                <PayableAmount currencyID='{$data['moneda']}'>{$data['total_importe']}</PayableAmount>
+            </LegalMonetaryTotal>
+        </{$rootTag}>";
+        
+        $xmlPath = __DIR__ . '/../../xml/' . $filename . '.xml';
+        file_put_contents($xmlPath, $xmlContent);
+        
+        $dbXmlPath = "xml/{$filename}.xml";
+        $conn->prepare("UPDATE comprobantes_electronicos SET xml_path = :path WHERE id = :id")
+             ->execute([':path' => $dbXmlPath, ':id' => $comprobante_id]);
+    } else {
+        $conn->prepare("UPDATE comprobantes_electronicos SET xml_path = NULL WHERE id = :id")
+             ->execute([':id' => $comprobante_id]);
+    }
 
     // 5. Integración Contable Automática
     if ($generar_asiento && $estado != 'Borrador') {

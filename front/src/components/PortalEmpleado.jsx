@@ -21,20 +21,25 @@ const PortalEmpleado = () => {
     fetchData();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
       // 1. Get Profile
-      const resProfile = await axios.get(`${API_URL}api/portal_empleado.php?action=profile`);
+      const resProfile = await axios.get(`${API_URL}portal_empleado.php?action=profile`, { headers: getAuthHeaders() });
       setProfile(resProfile.data.data);
 
       if (resProfile.data.linked) {
         // 2. Get Boletas
-        const resBoletas = await axios.get(`${API_URL}portal_empleado.php?action=boletas`);
+        const resBoletas = await axios.get(`${API_URL}portal_empleado.php?action=boletas`, { headers: getAuthHeaders() });
         setBoletas(resBoletas.data.data);
 
         // 3. Get Vacaciones
-        const resVacaciones = await axios.get(`${API_URL}api/portal_empleado.php?action=vacaciones`);
+        const resVacaciones = await axios.get(`${API_URL}portal_empleado.php?action=vacaciones`, { headers: getAuthHeaders() });
         setVacaciones(resVacaciones.data.data);
       } else {
           setError(resProfile.data.message || "Tu usuario no está vinculado a un perfil de colaborador.");
@@ -51,7 +56,7 @@ const PortalEmpleado = () => {
   const handleVacationSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}portal_empleado.php?action=solicitar_vacaciones`, vacationForm);
+      await axios.post(`${API_URL}portal_empleado.php?action=solicitar_vacaciones`, vacationForm, { headers: getAuthHeaders() });
       setShowVacationModal(false);
       setVacationForm({ fecha_inicio: '', fecha_fin: '', motivo: '' });
       fetchData(); // Reload data

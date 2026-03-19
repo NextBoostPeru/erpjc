@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 header("Content-Type: application/json");
 
@@ -27,6 +28,28 @@ if (!$userData) {
     exit;
 }
 
+$action = $_GET['action'] ?? '';
+if ($method !== 'GET') {
+    rbac_ensure_roles_modulos_schema($conn);
+    [, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = ($method === 'POST' && $action === 'sync_sunat') ? 'editar' : rbac_required_perm_for_request($method);
+
+    if (
+        !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'configuracion', $required)
+        && !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'sedes', $required)
+    ) {
+        http_response_code(403);
+        echo json_encode([
+            "message" => "No tienes permiso para esta acción",
+            "forbidden" => true,
+            "modulo" => "configuracion",
+            "permiso" => $required
+        ]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+}
+
 // TODO: Validar permisos específicos del rol si es necesario (rol_id 2 es contador)
 
 switch ($method) {
@@ -46,8 +69,6 @@ switch ($method) {
         break;
 
     case 'POST':
-        $action = $_GET['action'] ?? '';
-        
         if ($action === 'sync_sunat') {
             require_once __DIR__ . '/services/SunatService.php';
             

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 require_once __DIR__ . '/helpers/StockHelper.php';
 require_once __DIR__ . '/Nubefact.php';
 
@@ -18,15 +19,289 @@ if (!$user_data) {
 }
 $user_id = is_object($user_data) ? $user_data->id : $user_data['id'];
 
+rbac_require($conn, $user_data, 'guias_remision', $method);
+
 
 // Helpers
 function getJsonInput() {
     return json_decode(file_get_contents("php://input"), true);
 }
 
+function isPdfBytes($bytes) {
+    if (!is_string($bytes) || strlen($bytes) < 4) return false;
+    return substr($bytes, 0, 4) === '%PDF';
+}
+
+function decodePdfZipBase64ToPdfBytes($base64Zip) {
+    if (empty($base64Zip)) return null;
+    $zipBytes = base64_decode($base64Zip, true);
+    if ($zipBytes === false) return null;
+
+    if (!class_exists('ZipArchive')) {
+        throw new Exception('ZipArchive no disponible en el servidor');
+    }
+
+    $tmpDir = sys_get_temp_dir();
+    $zipPath = tempnam($tmpDir, 'nubefact_pdf_');
+    if ($zipPath === false) {
+        throw new Exception('No se pudo crear archivo temporal');
+    }
+
+    file_put_contents($zipPath, $zipBytes);
+
+    $zip = new ZipArchive();
+    $openRes = $zip->open($zipPath);
+    if ($openRes !== true) {
+        @unlink($zipPath);
+        return null;
+    }
+
+    $pdfBytes = null;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $stat = $zip->statIndex($i);
+        $name = $stat['name'] ?? '';
+        if ($name && preg_match('/\\.pdf$/i', $name)) {
+            $content = $zip->getFromIndex($i);
+            if ($content !== false && isPdfBytes($content)) {
+                $pdfBytes = $content;
+                break;
+            }
+        }
+    }
+    $zip->close();
+    @unlink($zipPath);
+
+    return $pdfBytes;
+}
+
+function fetchRemoteBinary($url, &$contentType = null) {
+    if (!function_exists('curl_init')) {
+        $context = stream_context_create([
+            "http" => [
+                "follow_location" => 1,
+                "timeout" => 60
+            ]
+        ]);
+        $data = @file_get_contents($url, false, $context);
+        if ($data === false) {
+            throw new Exception("No se pudo descargar el archivo");
+        }
+        $contentType = null;
+        if (isset($http_response_header) && is_array($http_response_header)) {
+            foreach ($http_response_header as $h) {
+                if (stripos($h, 'content-type:') === 0) {
+                    $contentType = trim(substr($h, strlen('content-type:')));
+                    break;
+                }
+            }
+        }
+        return $data;
+    }
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    curl_setopt($ch, CURLOPT_HEADER, true);
+    $resp = curl_exec($ch);
+    if ($resp === false) {
+        $err = curl_error($ch);
+        curl_close($ch);
+        $ch2 = curl_init($url);
+        curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch2, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch2, CURLOPT_MAXREDIRS, 5);
+        curl_setopt($ch2, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch2, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch2, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($ch2, CURLOPT_HEADER, true);
+        $resp2 = curl_exec($ch2);
+        if ($resp2 === false) {
+            $err2 = curl_error($ch2);
+            curl_close($ch2);
+            throw new Exception("No se pudo descargar el archivo: $err | $err2");
+        }
+        $resp = $resp2;
+        curl_close($ch2);
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+    $headersRaw = substr($resp, 0, $headerSize);
+    $body = substr($resp, $headerSize);
+    curl_close($ch);
+
+    $contentType = null;
+    foreach (preg_split("/\r\n|\n|\r/", $headersRaw) as $h) {
+        if (stripos($h, 'content-type:') === 0) {
+            $contentType = trim(substr($h, strlen('content-type:')));
+            break;
+        }
+    }
+    if ($status < 200 || $status >= 300) {
+        throw new Exception("No se pudo descargar el archivo (HTTP $status)");
+    }
+    return $body;
+}
+
 if ($method === 'GET') {
     $id = $_GET['id'] ?? null;
     $action = $_GET['action'] ?? null;
+
+    if ($action === 'download_pdf') {
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(['error' => 'ID requerido']);
+            if (isset($conn)) $conn = null;
+            exit;
+        }
+
+        try {
+            $stmt = $conn->prepare("SELECT id, serie, numero, estado, enlace_pdf FROM guias_remision WHERE id = ?");
+            $stmt->execute([$id]);
+            $guia = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$guia) {
+                http_response_code(404);
+                echo json_encode(['error' => 'Guía no encontrada']);
+                if (isset($conn)) $conn = null;
+                exit;
+            }
+
+            $linkPdf = $guia['enlace_pdf'] ?? '';
+            $estado = $guia['estado'] ?? '';
+            $serie = $guia['serie'] ?? '';
+            $numero = $guia['numero'] ?? '';
+
+            $pdfBytes = null;
+            $lastDownloadError = null;
+
+            if (!empty($linkPdf)) {
+                try {
+                    $contentType = null;
+                    $downloaded = fetchRemoteBinary($linkPdf, $contentType);
+                    if (isPdfBytes($downloaded)) {
+                        $pdfBytes = $downloaded;
+                    } else {
+                        $lastDownloadError = 'El enlace no devolvió un PDF válido';
+                    }
+                } catch (Exception $e) {
+                    $lastDownloadError = $e->getMessage();
+                }
+            }
+
+            if (!$pdfBytes) {
+                if ($estado === 'Emitida') {
+                    http_response_code(409);
+                    echo json_encode(['error' => 'La guía aún no fue enviada a SUNAT']);
+                    if (isset($conn)) $conn = null;
+                    exit;
+                }
+
+                $stmtConfig = $conn->prepare("SELECT configuracion_sunat FROM empresa_datos LIMIT 1");
+                $stmtConfig->execute();
+                $empresaConfig = $stmtConfig->fetch(PDO::FETCH_ASSOC);
+                $sunatConfig = isset($empresaConfig['configuracion_sunat']) ? json_decode($empresaConfig['configuracion_sunat'], true) : [];
+
+                $ruta = $sunatConfig['nubefact_ruta'] ?? '';
+                $token = $sunatConfig['nubefact_token'] ?? '';
+
+                if (empty($ruta) || empty($token)) {
+                    http_response_code(500);
+                    echo json_encode(['error' => 'Nubefact no configurado']);
+                    if (isset($conn)) $conn = null;
+                    exit;
+                }
+
+                $nubefactData = [
+                    "operacion" => "consultar_guia",
+                    "tipo_de_comprobante" => 7,
+                    "serie" => $serie,
+                    "numero" => (int)$numero
+                ];
+
+                $nubefact = new Nubefact($ruta, $token);
+                $res = $nubefact->enviarGuia($nubefactData);
+
+                if (!$res['success']) {
+                    $errorMsg = is_array($res['error']) ? json_encode($res['error']) : $res['error'];
+                    http_response_code(502);
+                    echo json_encode(['error' => $errorMsg]);
+                    if (isset($conn)) $conn = null;
+                    exit;
+                }
+
+                $respData = $res['data'];
+                $aceptada = $respData['aceptada_por_sunat'] ?? false;
+
+                $newLinkPdf = $respData['enlace_del_pdf'] ?? $respData['enlace_pdf'] ?? $respData['enlace'] ?? '';
+                $linkXml = $respData['enlace_del_xml'] ?? $respData['enlace_xml'] ?? '';
+                $linkCdr = $respData['enlace_del_cdr'] ?? $respData['enlace_cdr'] ?? '';
+
+                $nuevoEstado = $aceptada ? 'Aceptada' : 'Enviada';
+
+                $stmtUpdate = $conn->prepare("
+                    UPDATE guias_remision SET 
+                        estado = ?,
+                        enlace_pdf = ?,
+                        enlace_xml = ?,
+                        enlace_cdr = ?,
+                        sunat_description = ?,
+                        sunat_response_code = ?
+                    WHERE id = ?
+                ");
+                $stmtUpdate->execute([
+                    $nuevoEstado,
+                    $newLinkPdf,
+                    $linkXml,
+                    $linkCdr,
+                    $respData['sunat_description'] ?? ($aceptada ? 'Aceptada' : 'Consultada'),
+                    $respData['sunat_responsecode'] ?? '0',
+                    $id
+                ]);
+
+                $pdfBytes = decodePdfZipBase64ToPdfBytes($respData['pdf_zip_base64'] ?? '');
+
+                if (!$pdfBytes && !empty($newLinkPdf)) {
+                    $contentType = null;
+                    $downloaded = fetchRemoteBinary($newLinkPdf, $contentType);
+                    if (isPdfBytes($downloaded)) {
+                        $pdfBytes = $downloaded;
+                    }
+                }
+
+                if (!$pdfBytes) {
+                    http_response_code(409);
+                    $msg = 'SUNAT aún no generó el PDF de la guía';
+                    if ($lastDownloadError) {
+                        $msg = $msg . '. ' . $lastDownloadError;
+                    }
+                    echo json_encode(['error' => $msg]);
+                    if (isset($conn)) $conn = null;
+                    exit;
+                }
+            }
+
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            header('Content-Type: application/pdf');
+            $filename = 'GUIA_' . $serie . '-' . $numero . '.pdf';
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Content-Length: ' . strlen($pdfBytes));
+            echo $pdfBytes;
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+        if (isset($conn)) $conn = null;
+        exit;
+    }
 
     if ($id) {
         // Get single guide details

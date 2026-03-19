@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 include_once '../config/db.php';
 require_once '../config/jwt.php';
 require '../vendor/autoload.php';
+require_once '../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = isset($_GET['action']) ? $_GET['action'] : '';
@@ -27,6 +28,8 @@ if (!$user_data) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+rbac_require($conn, $user_data, 'beneficios', $method);
 
 // RMV vigente 2026 (D.S. N.º 006-2024-TR)
 define('RMV', 1130.00);

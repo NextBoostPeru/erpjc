@@ -6,6 +6,11 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+const TIPOS_ALQUILER = [
+  { value: 'andamio', label: 'Andamio' },
+  { value: 'prevencionista', label: 'Prevencionista' }
+];
+
 const Alquileres = () => {
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
@@ -22,6 +27,10 @@ const Alquileres = () => {
 
   const [almacenes, setAlmacenes] = useState([]);
   const [productos, setProductos] = useState([]);
+
+  const [canCreate, setCanCreate] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
+  const [canDelete, setCanDelete] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -52,6 +61,40 @@ const Alquileres = () => {
     cantidad: 1,
     tarifa_diaria: 0
   });
+
+  const checkPermissions = async () => {
+    let apiPermission = null;
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const response = await axios.get(`${API_URL}check_my_permissions.php?code=alquileres`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response.data && response.data.success !== false) {
+          const canCreateApi = response.data.crear === 1 || response.data.escritura === 1;
+          const canEditApi = response.data.editar === 1 || response.data.escritura === 1;
+          apiPermission = {
+            create: canCreateApi,
+            edit: canEditApi,
+            delete: response.data.eliminacion === 1
+          };
+        }
+      }
+    } catch (error) {
+      console.error('Error checking permissions for alquileres', error);
+    }
+
+    if (apiPermission) {
+      setCanCreate(apiPermission.create);
+      setCanEdit(apiPermission.edit);
+      setCanDelete(apiPermission.delete);
+      return;
+    }
+
+    setCanCreate(false);
+    setCanEdit(false);
+    setCanDelete(false);
+  };
 
   const fetchList = async () => {
     setLoading(true);
@@ -84,7 +127,10 @@ const Alquileres = () => {
     try {
       const res = await axios.get(`${API_URL}almacenes.php`, { headers });
       setAlmacenes(Array.isArray(res.data) ? res.data : []);
-    } catch {}
+    } catch (error) {
+      console.error(error);
+      setAlmacenes([]);
+    }
   };
 
   const fetchProductos = async () => {
@@ -92,7 +138,10 @@ const Alquileres = () => {
       const res = await axios.get(`${API_URL}productos.php?page=1&limit=200&categoria=andamio`, { headers });
       const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
       setProductos(data);
-    } catch {}
+    } catch (error) {
+      console.error(error);
+      setProductos([]);
+    }
   };
 
   useEffect(() => {
@@ -113,6 +162,7 @@ const Alquileres = () => {
   useEffect(() => {
     fetchAlmacenes();
     fetchProductos();
+    checkPermissions();
   }, []);
 
   useEffect(() => {
@@ -156,16 +206,17 @@ const Alquileres = () => {
 
   const addDetalle = () => {
     if (!detalleTemp.producto_id && !(detalleTemp.descripcion && detalleTemp.descripcion.trim().length > 0)) {
-      toast.error('Ingrese el componente de andamio');
+      toast.error(form.tipo === 'andamio' ? 'Ingrese el componente de andamio' : 'Ingrese el detalle');
       return;
     }
     if (detalleTemp.cantidad <= 0) {
       toast.error('Cantidad inválida');
       return;
     }
-    setForm(prev => ({ ...prev, detalles: [...prev.detalles, detalleTemp] }));
+    const itemToAdd = { ...detalleTemp, item_tipo: form.tipo };
+    setForm(prev => ({ ...prev, detalles: [...prev.detalles, itemToAdd] }));
     setDetalleTemp({
-      item_tipo: 'andamio',
+      item_tipo: form.tipo,
       producto_id: '',
       descripcion: '',
       cantidad: 1,
@@ -190,7 +241,7 @@ const Alquileres = () => {
         toast.error('Complete datos del cliente');
         return;
       }
-      if (!form.almacen_id) {
+      if (form.tipo === 'andamio' && !form.almacen_id) {
         toast.error('Seleccione almacén');
         return;
       }
@@ -304,7 +355,9 @@ const Alquileres = () => {
         <div className="flex gap-2">
           <button onClick={() => setTab('list')} className={`px-3 py-2 rounded-lg border ${tab==='list'?'bg-blue-600 text-white border-blue-600':'bg-white text-gray-700 border-gray-300'}`}>Listado</button>
           <button onClick={() => setTab('alerts')} className={`px-3 py-2 rounded-lg border ${tab==='alerts'?'bg-amber-500 text-white border-amber-500':'bg-white text-gray-700 border-gray-300'}`}>Alertas</button>
-          <button onClick={() => { setShowModal(true); setTab('list'); }} className="px-3 py-2 rounded-lg bg-green-600 text-white flex items-center gap-2"><Plus size={18}/> Nuevo</button>
+          {canCreate && (
+            <button onClick={() => { setShowModal(true); setTab('list'); }} className="px-3 py-2 rounded-lg bg-green-600 text-white flex items-center gap-2"><Plus size={18}/> Nuevo</button>
+          )}
         </div>
       </div>
 
@@ -357,12 +410,16 @@ const Alquileres = () => {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex justify-center gap-2">
-                      <button onClick={() => openEdit(a)} className="text-gray-600 hover:text-gray-800 p-1" title="Editar">
-                        <Pencil size={18} />
-                      </button>
-                      <button onClick={() => confirmDelete(a)} className="text-red-600 hover:text-red-800 p-1" title="Eliminar">
-                        <Trash2 size={18} />
-                      </button>
+                      {canEdit && (
+                        <button onClick={() => openEdit(a)} className="text-gray-600 hover:text-gray-800 p-1" title="Editar">
+                          <Pencil size={18} />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => confirmDelete(a)} className="text-red-600 hover:text-red-800 p-1" title="Eliminar">
+                          <Trash2 size={18} />
+                        </button>
+                      )}
                       {a.estado === 'Activo' && (
                         <button onClick={() => programarRecojo(a)} className="text-amber-600 hover:text-amber-800 p-1" title="Programar Recojo">
                           <Calendar size={18} />
@@ -487,7 +544,23 @@ const Alquileres = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Tipo</label>
-                  <div className="mt-1 w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700 text-sm md:text-base">Andamio</div>
+                  <select
+                    value={form.tipo}
+                    onChange={e => {
+                      const nextTipo = e.target.value;
+                      setForm(prev => ({
+                        ...prev,
+                        tipo: nextTipo,
+                        almacen_id: nextTipo === 'andamio' ? prev.almacen_id : ''
+                      }));
+                      setDetalleTemp(prev => ({ ...prev, item_tipo: nextTipo }));
+                    }}
+                    className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"
+                  >
+                    {TIPOS_ALQUILER.map(t => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Fecha Inicio</label>
@@ -497,13 +570,15 @@ const Alquileres = () => {
                   <label className="block text-sm font-medium text-gray-700">Fecha Fin</label>
                   <input type="date" value={form.fecha_fin} onChange={e => setForm(prev => ({...prev, fecha_fin: e.target.value}))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"/>
                 </div>
-                <div className="sm:col-span-2 md:col-span-1">
-                  <label className="block text-sm font-medium text-gray-700">Almacén</label>
-                  <select value={form.almacen_id} onChange={e => setForm(prev => ({...prev, almacen_id: e.target.value}))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base">
-                    <option value="">Seleccione</option>
-                    {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                  </select>
-                </div>
+                {form.tipo === 'andamio' && (
+                  <div className="sm:col-span-2 md:col-span-1">
+                    <label className="block text-sm font-medium text-gray-700">Almacén</label>
+                    <select value={form.almacen_id} onChange={e => setForm(prev => ({...prev, almacen_id: e.target.value}))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base">
+                      <option value="">Seleccione</option>
+                      {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Alertar días antes</label>
                   <input type="number" min="1" value={form.alert_days} onChange={e => setForm(prev => ({...prev, alert_days: parseInt(e.target.value || 1)}))} className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"/>
@@ -518,7 +593,7 @@ const Alquileres = () => {
                 <div className="font-semibold text-gray-800 mb-3">Detalle</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
                   <div className="sm:col-span-2 md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700">Componente de andamio</label>
+                    <label className="block text-sm font-medium text-gray-700">{form.tipo === 'andamio' ? 'Componente de andamio' : 'Detalle'}</label>
                     <input
                       type="text"
                       value={detalleTemp.descripcion || ''}
@@ -526,7 +601,7 @@ const Alquileres = () => {
                         const val = e.target.value;
                         setDetalleTemp(prev => ({ ...prev, descripcion: val, producto_id: '' }));
                       }}
-                      placeholder="Escribir componente"
+                      placeholder={form.tipo === 'andamio' ? 'Escribir componente' : 'Escribir detalle'}
                       className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"
                     />
                   </div>

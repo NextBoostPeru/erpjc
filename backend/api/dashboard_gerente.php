@@ -1,15 +1,45 @@
 <?php
 require_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require_once 'helpers/SimpleCache.php';
 
 header('Content-Type: application/json');
 
-// Verify Token and Permissions (Basic check)
-$headers = getallheaders();
-$token = isset($headers['Authorization']) ? str_replace('Bearer ', '', $headers['Authorization']) : null;
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
 
-// In a real scenario, we would validate the token here
-// For now, assuming public or already validated by middleware if existed
+function rbac_require_any(PDO $conn, $userData, array $moduleCodes, string $method, ?string $perm = null): array {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = $perm ?? rbac_required_perm_for_request($method);
+
+    foreach ($moduleCodes as $code) {
+        if (rbac_can($conn, (int)$rolId, (string)$rolNombre, (string)$code, $required)) {
+            return [$userId, $rolId, $rolNombre, $required, $code];
+        }
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => $moduleCodes[0] ?? '',
+        "modulos" => $moduleCodes,
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require_any($conn, $userData, ['dashboard_gerente', 'dashboard'], 'GET', 'lectura');
 
 // Initialize Cache
 $cache = new SimpleCache();

@@ -21,20 +21,115 @@ function ensureQuoteApproverTable($conn) {
 }
 
 function hasQuoteApprovalRight($conn, $usuario_id) {
-    // Gerencia always allowed
-    $q = $conn->prepare("SELECT r.nombre AS rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = ?");
-    $q->execute([$usuario_id]);
-    $u = $q->fetch(PDO::FETCH_ASSOC);
-    $rol = strtolower($u['rol_nombre'] ?? '');
-    if (in_array($rol, ['gerente','gerencia'])) return true;
-    // Else check configured approvers
+    if (!$usuario_id) return false;
     ensureQuoteApproverTable($conn);
     $stmt = $conn->prepare("SELECT COUNT(*) FROM cotizaciones_aprobadores WHERE usuario_id = ? AND activo = 1");
     $stmt->execute([$usuario_id]);
     return ((int)$stmt->fetchColumn()) > 0;
 }
+
+function canConfigureQuoteApprovers($conn, $usuario_id) {
+    if (!$usuario_id) return false;
+    rbac_ensure_roles_modulos_schema($conn);
+    $stmt = $conn->prepare("SELECT u.rol_id, r.nombre as rol_nombre FROM usuarios u LEFT JOIN roles r ON u.rol_id = r.id WHERE u.id = ? LIMIT 1");
+    $stmt->execute([$usuario_id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    $rolId = (int)($row['rol_id'] ?? 0);
+    $rolNombre = strtolower((string)($row['rol_nombre'] ?? ''));
+    return $rolId > 0 && rbac_can($conn, $rolId, $rolNombre, 'cotizaciones', 'editar');
+}
+
+function tableExists($conn, $table) {
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) return false;
+    $stmt = $conn->prepare("SHOW TABLES LIKE ?");
+    $stmt->execute([$table]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function getTableColumns($conn, $table) {
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $table)) return [];
+    $stmt = $conn->query("SHOW COLUMNS FROM `$table`");
+    $cols = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (!empty($row['Field'])) $cols[] = $row['Field'];
+    }
+    return $cols;
+}
+
+function upsertClienteFromCotizacion($conn, $data) {
+    try {
+        $numDoc = trim((string)($data['cliente_num_doc'] ?? ''));
+        $razon = trim((string)($data['cliente_razon_social'] ?? ''));
+        $tipoDoc = trim((string)($data['cliente_tipo_doc'] ?? ''));
+        if ($numDoc === '' || $razon === '') return null;
+
+        if (!tableExists($conn, 'clientes')) return null;
+        $cols = getTableColumns($conn, 'clientes');
+        if (!in_array('num_doc', $cols, true) || !in_array('razon_social', $cols, true)) return null;
+
+        $values = [
+            'tipo_doc' => $tipoDoc !== '' ? $tipoDoc : '6',
+            'num_doc' => $numDoc,
+            'razon_social' => $razon,
+            'direccion' => (string)($data['cliente_direccion'] ?? ''),
+            'telefono' => (string)($data['cliente_telefono'] ?? ''),
+            'email' => (string)($data['cliente_email'] ?? ''),
+            'contacto_nombre' => (string)($data['cliente_nombre_contacto'] ?? ''),
+            'condicion_pago' => (string)($data['condicion_pago'] ?? 'Contado'),
+            'estado' => 'Activo'
+        ];
+
+        $stmtFind = $conn->prepare("SELECT id FROM clientes WHERE num_doc = ? LIMIT 1");
+        $stmtFind->execute([$numDoc]);
+        $existingId = $stmtFind->fetchColumn();
+
+        if ($existingId) {
+            $setParts = [];
+            $params = [':id' => (int)$existingId];
+
+            foreach ($values as $col => $val) {
+                if (!in_array($col, $cols, true)) continue;
+                $ph = ':' . $col;
+                if (in_array($col, ['tipo_doc', 'num_doc', 'razon_social', 'estado'], true)) {
+                    $setParts[] = "$col = $ph";
+                } else {
+                    $setParts[] = "$col = CASE WHEN $ph IS NULL OR $ph = '' THEN $col ELSE $ph END";
+                }
+                $params[$ph] = $val;
+            }
+
+            if (!empty($setParts)) {
+                $sql = "UPDATE clientes SET " . implode(', ', $setParts) . " WHERE id = :id";
+                $stmtUp = $conn->prepare($sql);
+                $stmtUp->execute($params);
+            }
+
+            return (int)$existingId;
+        }
+
+        $insertCols = [];
+        $insertPh = [];
+        $params = [];
+        foreach ($values as $col => $val) {
+            if (!in_array($col, $cols, true)) continue;
+            $insertCols[] = $col;
+            $insertPh[] = ':' . $col;
+            $params[':' . $col] = $val;
+        }
+
+        if (empty($insertCols)) return null;
+
+        $sql = "INSERT INTO clientes (" . implode(',', $insertCols) . ") VALUES (" . implode(',', $insertPh) . ")";
+        $stmtIns = $conn->prepare($sql);
+        $stmtIns->execute($params);
+        return (int)$conn->lastInsertId();
+    } catch (Exception $e) {
+        return null;
+    }
+}
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/includes/facturacion_functions.php';
 
@@ -59,7 +154,42 @@ if (!file_exists($uploadDir)) {
     mkdir($uploadDir, 0777, true);
 }
 
+$method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+$requiredPerm = null;
+if (strtoupper($method) === 'GET') {
+    $requiredPerm = 'lectura';
+} elseif (strtoupper($method) === 'DELETE') {
+    $requiredPerm = 'eliminacion';
+} elseif (strtoupper($method) === 'PUT') {
+    $requiredPerm = 'editar';
+} else {
+    switch ($action) {
+        case 'delete':
+            $requiredPerm = 'eliminacion';
+            break;
+        case 'update':
+        case 'update_status':
+        case 'upload_attachment':
+        case 'save_template':
+        case 'delete_template':
+        case 'send_email':
+        case 'approvers':
+            $requiredPerm = 'editar';
+            break;
+        case 'create':
+        case 'duplicate':
+        case 'convert':
+            $requiredPerm = 'crear';
+            break;
+        default:
+            $requiredPerm = rbac_required_perm_for_method($method);
+            break;
+    }
+}
+
+rbac_require($conn, $userData, 'cotizaciones', $method, $requiredPerm);
 
 switch ($action) {
     case 'approvers':
@@ -74,10 +204,10 @@ switch ($action) {
             echo json_encode(['data' => $rows]);
             break;
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $rol = strtolower($userData['rol_nombre'] ?? '');
-            if (!in_array($rol, ['gerente', 'gerencia'])) {
+            $currentUserId = (int)($userData['id'] ?? 0);
+            if (!$currentUserId || !canConfigureQuoteApprovers($conn, $currentUserId)) {
                 http_response_code(403);
-                echo json_encode(["message" => "Solo Gerencia puede configurar aprobadores"]);
+                echo json_encode(["message" => "No tienes permiso para configurar aprobadores"]);
                 break;
             }
             $data = json_decode(file_get_contents("php://input"), true);
@@ -99,10 +229,10 @@ switch ($action) {
             echo json_encode(["message" => "Aprobador agregado"]);
             break;
         } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
-            $rol = strtolower($userData['rol_nombre'] ?? '');
-            if (!in_array($rol, ['gerente', 'gerencia'])) {
+            $currentUserId = (int)($userData['id'] ?? 0);
+            if (!$currentUserId || !canConfigureQuoteApprovers($conn, $currentUserId)) {
                 http_response_code(403);
-                echo json_encode(["message" => "Solo Gerencia puede eliminar aprobadores"]);
+                echo json_encode(["message" => "No tienes permiso para eliminar aprobadores"]);
                 break;
             }
             $id = $_GET['id'] ?? null;
@@ -207,6 +337,8 @@ switch ($action) {
         try {
             $conn->beginTransaction();
 
+            upsertClienteFromCotizacion($conn, $data);
+
             // Generar Serie/Correlativo
             $serie = 'COT';
             $stmt = $conn->prepare("SELECT MAX(correlativo) as max_corr FROM cotizaciones");
@@ -291,6 +423,8 @@ switch ($action) {
 
         try {
             $conn->beginTransaction();
+
+            upsertClienteFromCotizacion($conn, $data);
 
             // Verificar estado
             $stmtCheck = $conn->prepare("SELECT estado FROM cotizaciones WHERE id = ?");
@@ -561,7 +695,14 @@ switch ($action) {
 
     case 'convert':
         $data = json_decode(file_get_contents("php://input"), true);
-        $id = $data['id'];
+        $id = $data['id'] ?? null;
+
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "ID no proporcionado"]);
+            if (isset($conn)) $conn = null;
+            break;
+        }
 
         try {
             $conn->beginTransaction();
@@ -574,52 +715,39 @@ switch ($action) {
             if ($cot['estado'] === 'Convertida') throw new Exception("La cotización ya fue convertida");
 
             $tipo_comprobante = (strlen($cot['cliente_num_doc']) == 11) ? '01' : '03'; 
-            $serie_comp = ($tipo_comprobante == '01') ? 'FFF1' : 'BBB1';
-
-            $stmtMax = $conn->prepare("SELECT MAX(correlativo) as max_corr FROM comprobantes_electronicos WHERE tipo_comprobante = ? AND serie = ?");
-            $stmtMax->execute([$tipo_comprobante, $serie_comp]);
-            $rowMax = $stmtMax->fetch();
-            $correlativo_comp = ($rowMax['max_corr'] ?? 0) + 1;
+            $serie_comp = null;
+            try {
+                $stmtSerie = $conn->prepare("SELECT serie FROM series_comprobantes WHERE tipo_comprobante = ? AND activo = 1 LIMIT 1");
+                $stmtSerie->execute([$tipo_comprobante]);
+                $serie_comp = $stmtSerie->fetchColumn() ?: null;
+            } catch (Throwable $e) {
+                try {
+                    $stmtSerie = $conn->prepare("SELECT serie FROM series_comprobantes WHERE tipo_comprobante = ? LIMIT 1");
+                    $stmtSerie->execute([$tipo_comprobante]);
+                    $serie_comp = $stmtSerie->fetchColumn() ?: null;
+                } catch (Throwable $e2) {
+                    $serie_comp = null;
+                }
+            }
+            if (empty($serie_comp)) {
+                $serie_comp = ($tipo_comprobante == '01') ? 'FFF1' : 'BBB1';
+            }
 
             $condicion = $cot['condicion_pago'] ?? 'Contado';
-            $fecha_vencimiento = date('Y-m-d');
+            $fecha_emision = date('Y-m-d');
+            $fecha_vencimiento = !empty($cot['fecha_vencimiento']) ? $cot['fecha_vencimiento'] : $fecha_emision;
             
             if (preg_match('/Crédito (\d+) días/i', $condicion, $matches)) {
                 $dias = (int)$matches[1];
-                $fecha_vencimiento = date('Y-m-d', strtotime("+$dias days"));
+                $fecha_vencimiento = date('Y-m-d', strtotime($fecha_emision . " +$dias days"));
             }
-
-            $sqlComp = "INSERT INTO comprobantes_electronicos (
-                tipo_comprobante, serie, correlativo, cliente_tipo_doc, cliente_num_doc, cliente_razon_social,
-                moneda, total_gravada, total_igv, total_importe, estado,
-                fecha_vencimiento, condicion_pago, saldo_pendiente, estado_cobro
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, 'Generado',
-                ?, ?, ?, 'Pendiente'
-            )";
-
-            $stmtComp = $conn->prepare($sqlComp);
-            $stmtComp->execute([
-                $tipo_comprobante, $serie_comp, $correlativo_comp,
-                $cot['cliente_tipo_doc'], $cot['cliente_num_doc'], $cot['cliente_razon_social'],
-                $cot['moneda'], $cot['total_gravada'], $cot['total_igv'], $cot['total_importe'],
-                $fecha_vencimiento, $condicion, $cot['total_importe']
-            ]);
-            
-            $comprobanteId = $conn->lastInsertId();
 
             $stmtDetalleCot = $conn->prepare("SELECT * FROM cotizaciones_detalles WHERE cotizacion_id = ?");
             $stmtDetalleCot->execute([$id]);
             $items = $stmtDetalleCot->fetchAll(PDO::FETCH_ASSOC);
 
-            $sqlCompDet = "INSERT INTO comprobantes_electronicos_detalle (
-                comprobante_id, item_codigo, descripcion, unidad_medida, cantidad,
-                valor_unitario, precio_unitario, valor_venta, igv
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            $stmtCompDet = $conn->prepare($sqlCompDet);
-
-            foreach ($items as $item) {
+            $mappedItems = [];
+            foreach (($items ?: []) as $item) {
                 // Concatenar sub_concepto a la descripción si existe
                 $descripcionCompleta = $item['descripcion'];
                 if (!empty($item['sub_concepto'])) {
@@ -631,25 +759,48 @@ switch ($action) {
                         }, $subConceptoLines));
                     }
                 }
-
-                $stmtCompDet->execute([
-                    $comprobanteId, $item['item_codigo'], $descripcionCompleta, $item['unidad_medida'],
-                    $item['cantidad'], $item['valor_unitario'], $item['precio_unitario'],
-                    $item['valor_venta'], $item['igv']
-                ]);
+                $mappedItems[] = [
+                    'codigo' => $item['item_codigo'] ?? '',
+                    'descripcion' => $descripcionCompleta,
+                    'unidad_medida' => $item['unidad_medida'] ?? 'NIU',
+                    'cantidad' => $item['cantidad'],
+                    'valor_unitario' => $item['valor_unitario'],
+                    'precio_unitario' => $item['precio_unitario'],
+                    'valor_venta' => $item['valor_venta'],
+                    'igv' => $item['igv']
+                ];
             }
+
+            $compData = [
+                'tipo_comprobante' => $tipo_comprobante,
+                'serie' => $serie_comp,
+                'fecha_emision' => $fecha_emision,
+                'fecha_vencimiento' => $fecha_vencimiento,
+                'condicion_pago' => $condicion,
+                'cliente_tipo_doc' => $cot['cliente_tipo_doc'],
+                'cliente_num_doc' => $cot['cliente_num_doc'],
+                'cliente_razon_social' => $cot['cliente_razon_social'],
+                'moneda' => $cot['moneda'] ?? 'PEN',
+                'tipo_cambio' => 1.000,
+                'total_gravada' => $cot['total_gravada'],
+                'total_exonerada' => $cot['total_exonerada'] ?? 0,
+                'total_inafecta' => $cot['total_inafecta'] ?? 0,
+                'total_igv' => $cot['total_igv'],
+                'total_importe' => $cot['total_importe'],
+                'estado' => 'Borrador',
+                'generar_asiento' => false,
+                'items' => $mappedItems
+            ];
+
+            $comprobanteId = crearComprobanteElectronico($conn, $compData, $userData);
 
             $conn->prepare("UPDATE cotizaciones SET estado = 'Convertida' WHERE id = ?")->execute([$id]);
 
             $conn->commit();
 
-            // Enviar a Nubefact automáticamente
-            $nubefactRes = enviarComprobanteNubefact($conn, $comprobanteId);
-
             echo json_encode([
-                "message" => "Cotización convertida a venta exitosamente", 
-                "comprobante_id" => $comprobanteId,
-                "nubefact" => $nubefactRes
+                "message" => "Cotización convertida a venta exitosamente. Edite la venta y luego genere la factura.", 
+                "comprobante_id" => $comprobanteId
             ]);
 
         } catch (Exception $e) {

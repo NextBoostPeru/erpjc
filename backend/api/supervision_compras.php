@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -13,12 +14,21 @@ if (!$userData) {
     exit;
 }
 
-// RBAC básico: permitir lectura a usuarios autenticados; restringir aprobación a admin/gerente
-$rol = is_object($userData) ? strtolower($userData->rol ?? '') : strtolower($userData['rol'] ?? '');
-
+$method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 $start = $_GET['start'] ?? date('Y-m-01');
 $end = $_GET['end'] ?? date('Y-m-t');
+$userId = (int)(is_object($userData) ? ($userData->id ?? 0) : ($userData['id'] ?? 0));
+
+if ($method === 'GET') {
+    rbac_require($conn, $userData, 'supervision_compras', 'GET', 'lectura');
+} else {
+    if ($action === 'manage_approval') {
+        rbac_require($conn, $userData, 'supervision_compras', $method, 'editar');
+    } else {
+        rbac_require($conn, $userData, 'supervision_compras', $method);
+    }
+}
 
 try {
     switch ($action) {
@@ -99,11 +109,6 @@ try {
             break;
 
         case 'manage_approval':
-            if ($rol !== 'admin' && $rol !== 'gerente') {
-                http_response_code(403);
-                echo json_encode(["message" => "Permiso denegado"]);
-                break;
-            }
             $data = json_decode(file_get_contents("php://input"), true);
             if (empty($data['id']) || empty($data['status'])) {
                 throw new Exception("Datos incompletos");
@@ -115,7 +120,7 @@ try {
             $stmt = $conn->prepare($sql);
             $stmt->execute([
                 ':status' => $data['status'],
-                ':user' => (is_object($userData) ? $userData->id : $userData['id']),
+                ':user' => $userId,
                 ':id' => $data['id']
             ]);
             

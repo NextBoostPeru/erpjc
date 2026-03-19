@@ -31,6 +31,7 @@ import { generateDashboardPDF } from '../utils/dashboardPdf';
 
 const DashboardGerente = () => {
   const [loading, setLoading] = useState(true);
+  const [forbiddenMessage, setForbiddenMessage] = useState('');
   const [data, setData] = useState({
     kpis: {
       ventas_mes: { value: 0, change: 0 },
@@ -43,16 +44,21 @@ const DashboardGerente = () => {
     distribucion_gastos: []
   });
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const token = localStorage.getItem('token');
       // Try fetching from backend first
       const response = await axios.get(`${API_URL}dashboard_gerente.php`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: getAuthHeaders(),
+        _suppressForbiddenToast: true
       });
       
       if (response.data && response.data.kpis) {
@@ -63,6 +69,12 @@ const DashboardGerente = () => {
       setLoading(false);
 
     } catch (error) {
+      if (error?.response?.status === 403) {
+        const msg = error?.response?.data?.message || 'No tienes permiso para ver este dashboard';
+        setForbiddenMessage(msg);
+        setLoading(false);
+        return;
+      }
       console.warn('Using mock data due to API error:', error);
       
       // Fallback to mock data for visualization
@@ -114,6 +126,17 @@ const DashboardGerente = () => {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (forbiddenMessage) {
+    return (
+      <div className="p-8 bg-slate-50 min-h-screen">
+        <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-2xl p-6 text-center">
+          <h1 className="text-xl font-bold text-slate-800">Acceso restringido</h1>
+          <p className="mt-2 text-slate-600">{forbiddenMessage}</p>
+        </div>
       </div>
     );
   }

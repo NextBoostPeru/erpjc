@@ -6,6 +6,11 @@ import {
   FileText, Plus, Edit, Trash2, Save, X, ArrowUp, ArrowDown, Layout
 } from 'lucide-react';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token') || '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 const GestionPlantillasContratos = () => {
   const [plantillas, setPlantillas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +24,7 @@ const GestionPlantillasContratos = () => {
 
   const fetchPlantillas = async () => {
     try {
-      const response = await axios.get(`${API_URL}plantillas_contratos.php`);
+      const response = await axios.get(`${API_URL}plantillas_contratos.php`, { headers: getAuthHeaders() });
       setPlantillas(response.data);
       setLoading(false);
     } catch (error) {
@@ -32,7 +37,7 @@ const GestionPlantillasContratos = () => {
   const handleCreateTemplate = async () => {
     if (!newTemplateData.nombre) return toast.error("Nombre requerido");
     try {
-      await axios.post(`${API_URL}plantillas_contratos.php?action=create_template`, newTemplateData);
+      await axios.post(`${API_URL}plantillas_contratos.php?action=create_template`, newTemplateData, { headers: getAuthHeaders() });
       toast.success("Plantilla creada");
       setShowForm(false);
       setNewTemplateData({ nombre: '', tipo_contrato: 'Plazo Fijo', descripcion: '' });
@@ -45,7 +50,7 @@ const GestionPlantillasContratos = () => {
   const handleDeleteTemplate = async (id) => {
     if (!window.confirm("¿Seguro que desea eliminar esta plantilla?")) return;
     try {
-      await axios.delete(`${API_URL}plantillas_contratos.php?id=${id}`);
+      await axios.delete(`${API_URL}plantillas_contratos.php?id=${id}`, { headers: getAuthHeaders() });
       toast.success("Plantilla eliminada");
       if (editingTemplate?.id === id) setEditingTemplate(null);
       fetchPlantillas();
@@ -158,7 +163,7 @@ const TemplateEditor = ({ templateId }) => {
     const fetchSections = async () => {
         setLoading(true);
         try {
-            const response = await axios.get(`${API_URL}plantillas_contratos.php?id=${templateId}`);
+            const response = await axios.get(`${API_URL}plantillas_contratos.php?id=${templateId}`, { headers: getAuthHeaders() });
             setSections(response.data.secciones || []);
         } catch (error) {
             toast.error("Error al cargar secciones");
@@ -177,13 +182,13 @@ const TemplateEditor = ({ templateId }) => {
                     ...formData,
                     plantilla_id: templateId,
                     orden: maxOrder + 1
-                });
+                }, { headers: getAuthHeaders() });
                 toast.success("Sección agregada");
             } else {
                 await axios.post(`${API_URL}plantillas_contratos.php?action=update_section`, {
                     ...formData,
                     id: editingSection
-                });
+                }, { headers: getAuthHeaders() });
                 toast.success("Sección actualizada");
             }
             setEditingSection(null);
@@ -196,7 +201,7 @@ const TemplateEditor = ({ templateId }) => {
     const handleDeleteSection = async (id) => {
         if (!window.confirm("¿Eliminar esta sección?")) return;
         try {
-            await axios.delete(`${API_URL}plantillas_contratos.php?action=delete_section&id=${id}`);
+            await axios.delete(`${API_URL}plantillas_contratos.php?action=delete_section&id=${id}`, { headers: getAuthHeaders() });
             toast.success("Sección eliminada");
             fetchSections();
         } catch (error) {

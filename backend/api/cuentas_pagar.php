@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header('Content-Type: application/json');
 
@@ -36,6 +37,9 @@ try {
         if (isset($conn)) $conn = null;
         exit;
     }
+
+    $method = $_SERVER['REQUEST_METHOD'];
+    rbac_require($conn, $userData, 'cuentas_pagar', $method);
 
     $usuario_id = $userData->id;
     $action = $_GET['action'] ?? '';

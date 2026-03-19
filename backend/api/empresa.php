@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Origin: *");
@@ -35,7 +36,6 @@ ini_set('error_log', __DIR__ . '/../logs/php_error.log');
 $method = $_SERVER['REQUEST_METHOD'];
 $jwt = new JWTHandler();
 
-// Validar Token (acepta Authorization o token por query string)
 $token = $jwt->getBearerToken();
 if (!$token && isset($_GET['token'])) {
     $token = $_GET['token'];
@@ -49,26 +49,63 @@ if (!$userData) {
     exit;
 }
 
+if ($method !== 'GET') {
+    rbac_ensure_roles_modulos_schema($conn);
+    [, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = strtoupper($method) === 'POST' ? 'editar' : rbac_required_perm_for_request($method);
+
+    if (
+        !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'configuracion', $required)
+        && !rbac_can($conn, (int)$rolId, (string)$rolNombre, 'empresa', $required)
+    ) {
+        http_response_code(403);
+        echo json_encode([
+            "message" => "No tienes permiso para esta acción",
+            "forbidden" => true,
+            "modulo" => "configuracion",
+            "permiso" => $required
+        ]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+}
+
 switch ($method) {
     case 'GET':
         try {
+            $canSeeFull = false;
+            if ($userData) {
+                rbac_ensure_roles_modulos_schema($conn);
+                list($userId, $rolId, $rolNombre) = rbac_get_user_role($conn, $userData);
+                $canSeeFull = rbac_can($conn, (int)$rolId, (string)$rolNombre, 'configuracion', 'lectura')
+                    || rbac_can($conn, (int)$rolId, (string)$rolNombre, 'empresa', 'lectura');
+            }
+
             $query = "SELECT * FROM empresa_datos LIMIT 1";
             $stmt = $db->prepare($query);
             $stmt->execute();
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($result) {
-                // Decodificar JSON de config sunat si existe y es string
-                if (isset($result['configuracion_sunat']) && is_string($result['configuracion_sunat'])) {
-                    $decoded = json_decode($result['configuracion_sunat']);
-                    if (json_last_error() === JSON_ERROR_NONE) {
-                        $result['configuracion_sunat'] = $decoded;
-                    } else {
-                        // Fallback si no es JSON válido
-                         $result['configuracion_sunat'] = null;
+                if ($canSeeFull) {
+                    if (isset($result['configuracion_sunat']) && is_string($result['configuracion_sunat'])) {
+                        $decoded = json_decode($result['configuracion_sunat']);
+                        if (json_last_error() === JSON_ERROR_NONE) {
+                            $result['configuracion_sunat'] = $decoded;
+                        } else {
+                            $result['configuracion_sunat'] = null;
+                        }
                     }
+                    echo json_encode($result);
+                } else {
+                    echo json_encode([
+                        "ruc" => $result["ruc"] ?? "",
+                        "razon_social" => $result["razon_social"] ?? "",
+                        "nombre_comercial" => $result["nombre_comercial"] ?? "",
+                        "domicilio_fiscal" => $result["domicilio_fiscal"] ?? "",
+                        "logo" => $result["logo"] ?? null
+                    ]);
                 }
-                echo json_encode($result);
             } else {
                 echo json_encode((object)[]); // Objeto vacío si no hay datos
             }

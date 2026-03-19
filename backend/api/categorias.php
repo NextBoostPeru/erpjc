@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE");
@@ -25,6 +26,10 @@ if (!$user_data) {
     echo json_encode(['message' => 'Acceso no autorizado']);
     if (isset($conn)) $conn = null;
     exit;
+}
+
+if ($method !== 'GET') {
+    rbac_require($conn, $user_data, 'categorias', $method);
 }
 
 try {

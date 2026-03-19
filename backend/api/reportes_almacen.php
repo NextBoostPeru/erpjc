@@ -1,11 +1,28 @@
 <?php
 require_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 header('Content-Type: application/json');
+
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require($conn, $userData, 'reportes_almacen', 'GET', 'lectura');
 
 $action = $_GET['action'] ?? '';
 $almacen_id = $_GET['almacen_id'] ?? null;
 $fecha_inicio = $_GET['fecha_inicio'] ?? date('Y-m-01');
 $fecha_fin = $_GET['fecha_fin'] ?? date('Y-m-t');
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;
+$offset = ($page - 1) * $limit;
 
 // Fix: Ensure full day coverage for DATETIME columns
 if (strlen($fecha_inicio) == 10) $fecha_inicio .= ' 00:00:00';
@@ -17,6 +34,21 @@ try {
     switch ($action) {
         case 'stock_actual':
             // Stock actual por almacén y producto
+            // 1. Get Total Count
+            $countSql = "SELECT COUNT(*) as total 
+                    FROM stock_almacen sa
+                    JOIN productos p ON sa.producto_id = p.id
+                    JOIN almacenes a ON sa.almacen_id = a.id
+                    WHERE 1=1";
+            if ($almacen_id) {
+                $countSql .= " AND sa.almacen_id = :almacen_id";
+            }
+            $countStmt = $conn->prepare($countSql);
+            if ($almacen_id) $countStmt->bindParam(':almacen_id', $almacen_id);
+            $countStmt->execute();
+            $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+            // 2. Get Paginated Data
             $sql = "SELECT p.nombre, p.codigo_interno, a.nombre as almacen, sa.cantidad, p.precio 
                     FROM stock_almacen sa
                     JOIN productos p ON sa.producto_id = p.id
@@ -25,17 +57,48 @@ try {
             if ($almacen_id) {
                 $sql .= " AND sa.almacen_id = :almacen_id";
             }
-            $sql .= " ORDER BY a.nombre, p.nombre";
+            $sql .= " ORDER BY a.nombre, p.nombre LIMIT :limit OFFSET :offset";
             
             $stmt = $conn->prepare($sql);
             if ($almacen_id) $stmt->bindParam(':almacen_id', $almacen_id);
+            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
-            $response = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $response = [
+                'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'total_pages' => ceil($total / $limit)
+            ];
             break;
 
         case 'rotacion':
             // Rotación de inventario: Salidas / Stock Promedio (simplificado: Salidas totales en periodo)
             // Agrupado por producto
+            
+            // 1. Get Total Count
+            $countSql = "SELECT COUNT(*) as total FROM (
+                    SELECT p.id
+                    FROM kardex k
+                    JOIN productos p ON k.producto_id = p.id
+                    WHERE k.tipo_movimiento = 'salida' 
+                    AND k.fecha BETWEEN :fecha_inicio AND :fecha_fin";
+            if ($almacen_id) {
+                $countSql .= " AND k.almacen_id = :almacen_id";
+            }
+            $countSql .= " GROUP BY p.id
+            ) as sub";
+            
+            $countStmt = $conn->prepare($countSql);
+            $countStmt->bindParam(':fecha_inicio', $fecha_inicio);
+            $countStmt->bindParam(':fecha_fin', $fecha_fin);
+            if ($almacen_id) $countStmt->bindParam(':almacen_id', $almacen_id);
+            $countStmt->execute();
+            $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+            // 2. Get Paginated Data
             $sql = "SELECT p.nombre, SUM(k.cantidad) as total_salidas
                     FROM kardex k
                     JOIN productos p ON k.producto_id = p.id
@@ -46,14 +109,23 @@ try {
                 $sql .= " AND k.almacen_id = :almacen_id";
             }
             
-            $sql .= " GROUP BY p.id ORDER BY total_salidas DESC";
+            $sql .= " GROUP BY p.id ORDER BY total_salidas DESC LIMIT :limit OFFSET :offset";
 
             $stmt = $conn->prepare($sql);
             $stmt->bindParam(':fecha_inicio', $fecha_inicio);
             $stmt->bindParam(':fecha_fin', $fecha_fin);
             if ($almacen_id) $stmt->bindParam(':almacen_id', $almacen_id);
+            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
-            $response = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $response = [
+                'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'total_pages' => ceil($total / $limit)
+            ];
             break;
 
         case 'mas_vendidos':
@@ -101,6 +173,25 @@ try {
 
         case 'kardex':
             // Kardex detallado
+            // 1. Count
+            $countSql = "SELECT COUNT(*) as total 
+                    FROM kardex k
+                    JOIN productos p ON k.producto_id = p.id
+                    JOIN almacenes a ON k.almacen_id = a.id
+                    WHERE k.fecha BETWEEN :fecha_inicio AND :fecha_fin";
+            
+            if ($almacen_id) {
+                $countSql .= " AND k.almacen_id = :almacen_id";
+            }
+
+            $countStmt = $conn->prepare($countSql);
+            $countStmt->bindParam(':fecha_inicio', $fecha_inicio);
+            $countStmt->bindParam(':fecha_fin', $fecha_fin);
+            if ($almacen_id) $countStmt->bindParam(':almacen_id', $almacen_id);
+            $countStmt->execute();
+            $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+            // 2. Data
             $sql = "SELECT k.*, p.nombre as producto, a.nombre as almacen 
                     FROM kardex k
                     JOIN productos p ON k.producto_id = p.id
@@ -111,14 +202,23 @@ try {
                 $sql .= " AND k.almacen_id = :almacen_id";
             }
             
-            $sql .= " ORDER BY k.fecha DESC, k.id DESC";
+            $sql .= " ORDER BY k.fecha DESC, k.id DESC LIMIT :limit OFFSET :offset";
 
             $stmt = $conn->prepare($sql);
             $stmt->bindParam(':fecha_inicio', $fecha_inicio);
             $stmt->bindParam(':fecha_fin', $fecha_fin);
             if ($almacen_id) $stmt->bindParam(':almacen_id', $almacen_id);
+            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
-            $response = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $response = [
+                'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'total_pages' => ceil($total / $limit)
+            ];
             break;
 
         case 'valorizacion':
@@ -137,21 +237,40 @@ try {
 
         case 'alertas':
             // Alertas críticas (Stock bajo)
-            // Compara stock global vs stock minimo global (ya que stock_minimo es de producto)
-            // O si queremos ser más precisos por almacén, necesitaríamos stock minimo por almacén. 
-            // Usaremos suma de stock_almacen vs stock_minimo del producto
+            // 1. Get Total
+            $countSql = "SELECT COUNT(*) as total FROM (
+                    SELECT p.id
+                    FROM productos p
+                    LEFT JOIN stock_almacen sa ON p.id = sa.producto_id
+                    GROUP BY p.id
+                    HAVING SUM(sa.cantidad) <= p.stock_minimo
+            ) as sub";
             
+            $countStmt = $conn->prepare($countSql);
+            $countStmt->execute();
+            $total = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+            // 2. Data
             $sql = "SELECT p.nombre, p.stock_minimo, SUM(sa.cantidad) as stock_actual,
                     (p.stock_minimo - SUM(sa.cantidad)) as deficit
                     FROM productos p
                     LEFT JOIN stock_almacen sa ON p.id = sa.producto_id
                     GROUP BY p.id
                     HAVING stock_actual <= p.stock_minimo
-                    ORDER BY deficit DESC";
+                    ORDER BY deficit DESC LIMIT :limit OFFSET :offset";
             
             $stmt = $conn->prepare($sql);
+            $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
-            $response = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $response = [
+                'data' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'total_pages' => ceil($total / $limit)
+            ];
             break;
 
         default:

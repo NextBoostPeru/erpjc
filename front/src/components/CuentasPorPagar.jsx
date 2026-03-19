@@ -61,7 +61,7 @@ const CuentasPorPagar = () => {
 
   const fetchDashboard = async () => {
     try {
-      const res = await axios.get(`${API_URL}/cuentas_pagar.php?action=dashboard`, {
+      const res = await axios.get(`${API_URL}cuentas_pagar.php?action=dashboard`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDashboardData(res.data);
@@ -73,7 +73,7 @@ const CuentasPorPagar = () => {
   const fetchPendientes = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/cuentas_pagar.php?action=listar_pendientes&proveedor=${search}&estado_filter=${filterEstado}`, {
+      const res = await axios.get(`${API_URL}cuentas_pagar.php?action=listar_pendientes&proveedor=${search}&estado_filter=${filterEstado}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPendientes(Array.isArray(res.data) ? res.data : []);
@@ -87,7 +87,7 @@ const CuentasPorPagar = () => {
 
   const fetchCuentasBancarias = async () => {
     try {
-      const res = await axios.get(`${API_URL}/bancos.php?action=listar_cuentas`, {
+      const res = await axios.get(`${API_URL}bancos.php?action=listar_cuentas`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCuentasBancarias(Array.isArray(res.data) ? res.data : []);
@@ -99,7 +99,7 @@ const CuentasPorPagar = () => {
   const fetchReporteVencimientos = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/cuentas_pagar.php?action=reporte_vencimientos`, {
+      const res = await axios.get(`${API_URL}cuentas_pagar.php?action=reporte_vencimientos`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setReporteVencimientos(Array.isArray(res.data) ? res.data : []);
@@ -114,7 +114,7 @@ const CuentasPorPagar = () => {
   const fetchEstadoCuenta = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/cuentas_pagar.php?action=estado_cuenta&doc=${proveedorSearch}`, {
+      const res = await axios.get(`${API_URL}cuentas_pagar.php?action=estado_cuenta&doc=${proveedorSearch}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setEstadoCuentaData(Array.isArray(res.data) ? res.data : []);
@@ -128,7 +128,7 @@ const CuentasPorPagar = () => {
   
   const fetchHistorialPagos = async (invoiceId) => {
     try {
-        const res = await axios.get(`${API_URL}/cuentas_pagar.php?action=historial_pagos&id=${invoiceId}`, {
+        const res = await axios.get(`${API_URL}cuentas_pagar.php?action=historial_pagos&id=${invoiceId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         setHistorialPagos(Array.isArray(res.data) ? res.data : []);
@@ -175,7 +175,7 @@ const CuentasPorPagar = () => {
     if (!window.confirm('¿Está seguro de eliminar este pago? Esta acción revertirá los saldos.')) return;
     
     try {
-        await axios.post(`${API_URL}/cuentas_pagar.php?action=eliminar_pago&id=${pagoId}`, {}, {
+        await axios.post(`${API_URL}cuentas_pagar.php?action=eliminar_pago&id=${pagoId}`, {}, {
             headers: { Authorization: `Bearer ${token}` }
         });
         toast.success('Pago eliminado correctamente');
@@ -216,10 +216,10 @@ const CuentasPorPagar = () => {
         formData.append('archivo', pagoForm.archivo);
       }
 
-      let url = `${API_URL}/cuentas_pagar.php?action=registrar_pago`;
+      let url = `${API_URL}cuentas_pagar.php?action=registrar_pago`;
       
       if (isEditMode) {
-        url = `${API_URL}/cuentas_pagar.php?action=editar_pago`;
+        url = `${API_URL}cuentas_pagar.php?action=editar_pago`;
         formData.append('id', editingPago.id);
       }
 

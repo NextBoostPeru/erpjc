@@ -14,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 // Validate JWT
 $jwt = new JWTHandler();
@@ -30,6 +31,8 @@ if (!$userData) {
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? null;
 $id = $_GET['id'] ?? null;
+
+rbac_require($conn, $userData, 'gestion_contratos', $method);
 
 try {
     if ($method === 'GET') {

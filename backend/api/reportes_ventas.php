@@ -12,6 +12,7 @@ ini_set('error_log', __DIR__ . '/../logs/php_error.log');
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -22,6 +23,9 @@ if (!$userData) {
     echo json_encode(["message" => "Acceso no autorizado"]);
     exit;
 }
+
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'reportes_ventas', $method);
 
 $action = $_GET['action'] ?? '';
 $startDate = $_GET['start_date'] ?? date('Y-m-01');

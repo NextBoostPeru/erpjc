@@ -1,6 +1,7 @@
 <?php
 include_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
+require_once __DIR__ . '/../config/rbac.php';
 
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
@@ -31,28 +32,8 @@ $target_user_id = isset($_GET['user_id']) && !empty($_GET['user_id']) ? $_GET['u
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Verificar Permisos (RBAC)
-try {
-    $stmtPermiso = $conn->prepare("
-        SELECT rm.permite_lectura, rm.permite_escritura 
-        FROM roles_modulos rm 
-        JOIN modulos m ON rm.modulo_id = m.id 
-        JOIN usuarios u ON u.rol_id = rm.rol_id 
-        WHERE u.id = :uid AND m.codigo = 'caja'
-    ");
-    $stmtPermiso->execute([':uid' => $usuario_id]);
-    $permisos = $stmtPermiso->fetch(PDO::FETCH_ASSOC);
-
-    if (!$permisos || ($method === 'GET' && !$permisos['permite_lectura']) || ($method === 'POST' && !$permisos['permite_escritura'])) {
-        http_response_code(403);
-        echo json_encode(["message" => "No tienes permisos para acceder a este módulo"]);
-        if (isset($conn)) $conn = null;
-        exit;
-    }
-} catch (Exception $e) {
-    // Si falla la verificación (ej. tablas no existen aun), permitimos continuar para el auto-setup,
-    // pero en producción estricta esto debería fallar.
-    // Dado el auto-setup abajo, lo ignoramos por ahora si es la primera vez.
+if (!($method === 'GET' && $action === 'get_pcge')) {
+    rbac_require($conn, $user_data, 'caja', $method);
 }
 
 try {
@@ -322,6 +303,11 @@ try {
                     $referencia = $data['referencia'] ?? '';
                     $receptor = $data['receptor'] ?? '';
                     $cuenta_contable = $data['cuenta_contable'] ?? '';
+                    $fecha_input = $data['fecha'] ?? null;
+                    $fecha_mov = date('Y-m-d H:i:s');
+                    if (!empty($fecha_input) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_input)) {
+                        $fecha_mov = $fecha_input . ' ' . date('H:i:s');
+                    }
 
                     if ($monto <= 0 || !$concepto || !$tipo) {
                         $conn->rollBack();
@@ -332,7 +318,7 @@ try {
 
                     // 2. Insertar Movimiento
                     $sql = "INSERT INTO caja_movimientos (sesion_id, tipo, monto, concepto, referencia, usuario_id, receptor, cuenta_contable, fecha) 
-                            VALUES (:sid, :tipo, :monto, :concepto, :ref, :uid, :rec, :cta, NOW())";
+                            VALUES (:sid, :tipo, :monto, :concepto, :ref, :uid, :rec, :cta, :fecha)";
                     $stmt = $conn->prepare($sql);
                     $stmt->execute([
                         ':sid' => $sesion['id'],
@@ -342,7 +328,8 @@ try {
                         ':ref' => $referencia,
                         ':uid' => $usuario_id,
                         ':rec' => $receptor,
-                        ':cta' => $cuenta_contable
+                        ':cta' => $cuenta_contable,
+                        ':fecha' => $fecha_mov
                     ]);
 
                     // 3. Integración Contable (Si hay cuenta contable)
@@ -352,8 +339,8 @@ try {
                         
                         // Cabecera Asiento
                         $sqlHead = "INSERT INTO asientos (fecha, glosa, tipo_asiento, moneda, estado, usuario_id) 
-                                    VALUES (NOW(), :glosa, 'Diario', 'PEN', 'Finalizado', :uid)";
-                        $conn->prepare($sqlHead)->execute([':glosa' => $glosa, ':uid' => $usuario_id]);
+                                    VALUES (:fecha, :glosa, 'Diario', 'PEN', 'Finalizado', :uid)";
+                        $conn->prepare($sqlHead)->execute([':fecha' => $fecha_mov, ':glosa' => $glosa, ':uid' => $usuario_id]);
                         $asiento_id = $conn->lastInsertId();
 
                         // Cuentas
@@ -393,6 +380,11 @@ try {
                 $referencia = $data['referencia'] ?? '';
                 $receptor = $data['receptor'] ?? '';
                 $cuenta_contable = $data['cuenta_contable'] ?? '';
+                $fecha_input = $data['fecha'] ?? null;
+                $fecha_mov = null;
+                if (!empty($fecha_input) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_input)) {
+                    $fecha_mov = $fecha_input . ' ' . date('H:i:s');
+                }
 
                 if (!$id || $monto <= 0 || !$concepto || !$tipo) {
                     http_response_code(400);
@@ -423,10 +415,10 @@ try {
                     // Actualizar movimiento
                     $sql = "UPDATE caja_movimientos 
                             SET tipo = :tipo, monto = :monto, concepto = :concepto, 
-                                referencia = :ref, receptor = :rec, cuenta_contable = :cta 
+                                referencia = :ref, receptor = :rec, cuenta_contable = :cta" . ($fecha_mov ? ", fecha = :fecha" : "") . "
                             WHERE id = :id";
                     $stmt = $conn->prepare($sql);
-                    $stmt->execute([
+                    $params = [
                         ':tipo' => $tipo,
                         ':monto' => $monto,
                         ':concepto' => $concepto,
@@ -434,7 +426,9 @@ try {
                         ':rec' => $receptor,
                         ':cta' => $cuenta_contable,
                         ':id' => $id
-                    ]);
+                    ];
+                    if ($fecha_mov) $params[':fecha'] = $fecha_mov;
+                    $stmt->execute($params);
 
                     $conn->commit();
                     echo json_encode(["success" => true, "message" => "Movimiento actualizado"]);

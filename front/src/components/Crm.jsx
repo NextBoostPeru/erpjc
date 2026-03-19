@@ -78,7 +78,7 @@ const Crm = () => {
 
     const performCotizacionSearch = async (signal) => {
         try {
-            const res = await axios.get(`${API_URL}crm.php?action=search_cotizaciones&q=${cotizacionSearch}`, { 
+            const res = await axios.get(`${API_URL}/crm.php?action=search_cotizaciones&q=${cotizacionSearch}`, { 
                 headers,
                 signal // Pass abort signal
             });
@@ -118,7 +118,7 @@ const Crm = () => {
         if (!cot.items || !Array.isArray(cot.items)) {
              try {
                  const toastId = toast.loading("Obteniendo datos...");
-                 const res = await axios.get(`${API_URL}cotizaciones.php?action=get&id=${cot.id}`, { headers });
+                 const res = await axios.get(`${API_URL}/cotizaciones.php?action=get&id=${cot.id}`, { headers });
                  fullCotData = res.data;
                  toast.dismiss(toastId);
              } catch (error) {
@@ -136,16 +136,21 @@ const Crm = () => {
         checkAdmin();
     }, []);
 
-    const checkAdmin = () => {
-        if (user && (user.rol_nombre === 'admin' || user.rol === 'admin' || user.rol_nombre === 'gerencia')) {
-            setIsAdmin(true);
-            fetchUsers();
+    const checkAdmin = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/check_my_permissions.php?code=permisos`, { headers });
+            const p = res.data || {};
+            const can = p.editar === 1 || p.escritura === 1;
+            setIsAdmin(can);
+            if (can) fetchUsers();
+        } catch (error) {
+            setIsAdmin(false);
         }
     };
 
     const fetchUsers = async () => {
         try {
-            const res = await axios.get(`${API_URL}crm.php?action=get_users`, { headers });
+            const res = await axios.get(`${API_URL}/crm.php?action=get_users`, { headers });
             setUsers(res.data);
         } catch (error) {
             console.error("Error fetching users", error);
@@ -164,7 +169,7 @@ const Crm = () => {
     const handleRegenerateKey = async () => {
         if(!window.confirm("¿Seguro? La clave anterior dejará de funcionar en todos los sitios conectados.")) return;
         try {
-            const res = await axios.post(`${API_URL}crm.php?action=regenerate_key`, {}, { headers });
+            const res = await axios.post(`${API_URL}/crm.php?action=regenerate_key`, {}, { headers });
             setConfigData(prev => ({ ...prev, api_key: res.data.api_key }));
             toast.success("Clave regenerada");
         } catch (error) {
@@ -192,7 +197,7 @@ const Crm = () => {
     const fetchActivities = async (leadId) => {
         setLoadingActivities(true);
         try {
-            const res = await axios.get(`${API_URL}crm.php?action=get_activities&lead_id=${leadId}`, { headers });
+            const res = await axios.get(`${API_URL}/crm.php?action=get_activities&lead_id=${leadId}`, { headers });
             setActivities(res.data);
         } catch (error) {
             console.error("Error fetching activities", error);
@@ -206,7 +211,7 @@ const Crm = () => {
         if (!editingLead) return;
         
         try {
-            await axios.post(`${API_URL}crm.php?action=add_activity`, {
+            await axios.post(`${API_URL}/crm.php?action=add_activity`, {
                 lead_id: editingLead.id,
                 ...newActivity
             }, { headers });
@@ -226,13 +231,12 @@ const Crm = () => {
             const action = editingLead ? 'update' : 'create';
             const payload = editingLead ? { ...formData, id: editingLead.id } : formData;
             
-            await axios.post(`${API_URL}crm.php?action=${action}`, payload, { headers });
+            await axios.post(`${API_URL}/crm.php?action=${action}`, payload, { headers });
             
             toast.success(editingLead ? "Lead actualizado" : "Lead creado");
             setShowModal(false);
             setEditingLead(null);
             resetForm();
-            fetchLeads();
         } catch (error) {
             toast.error("Error al guardar lead");
         }
@@ -275,7 +279,7 @@ const Crm = () => {
         setLeads(updatedLeads);
 
         try {
-            await axios.post(`${API_URL}crm.php?action=update`, { id: leadId, estado: newStatus }, { headers });
+            await axios.post(`${API_URL}/crm.php?action=update`, { id: leadId, estado: newStatus }, { headers });
             toast.success(`Movido a ${newStatus}`);
         } catch (error) {
             toast.error("Error al actualizar estado");

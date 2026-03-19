@@ -11,12 +11,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    $jwtHandler = new JWTHandler();
+    $token = $jwtHandler->getBearerToken();
+    $userData = $jwtHandler->validateToken($token);
+    if (!$userData) {
+        http_response_code(401);
+        echo json_encode(["message" => "Acceso no autorizado"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
     switch ($method) {
         case 'GET':
+            rbac_require($conn, $userData, 'planillas', 'GET', 'lectura');
             if (isset($_GET['action']) && $_GET['action'] === 'plame') {
                 handlePlame($conn);
             } elseif (isset($_GET['action']) && $_GET['action'] === 'plame_export') {
@@ -30,19 +42,24 @@ try {
 
         case 'POST':
             if (isset($_GET['action']) && $_GET['action'] === 'generate') {
+                rbac_require($conn, $userData, 'planillas', 'POST', 'crear');
                 handleGenerate($conn);
             } elseif (isset($_GET['action']) && $_GET['action'] === 'recalculate') {
+                rbac_require($conn, $userData, 'planillas', 'POST', 'editar');
                 handleRecalculate($conn);
             } else {
+                rbac_require($conn, $userData, 'planillas', 'POST', 'editar');
                 handleUpdateDetail($conn);
             }
             break;
 
         case 'PUT':
+            rbac_require($conn, $userData, 'planillas', 'PUT', 'editar');
             handleUpdateStatus($conn);
             break;
             
         case 'DELETE':
+            rbac_require($conn, $userData, 'planillas', 'DELETE', 'eliminacion');
             handleDelete($conn);
             break;
     }
@@ -84,7 +101,8 @@ function handleGetDetails($conn) {
     $sql = "SELECT d.*, c.nombres, c.apellidos, c.documento_numero, c.regimen_pensionario
             FROM planilla_detalles d
             JOIN colaboradores c ON d.colaborador_id = c.id
-            WHERE d.planilla_id = ?";
+            WHERE d.planilla_id = ?
+            AND LOWER(IFNULL(c.regimen_laboral,'')) <> 'recibo por honorarios'";
     $stmt = $conn->prepare($sql);
     $stmt->execute([$id]);
     $details = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -97,7 +115,7 @@ function handleGetDetails($conn) {
         $d['vida_ley_aporte'] = round($base * $rates['vida_ley_tasa'], 2);
         $d['sctr_aporte'] = round($base * $rates['sctr_tasa'], 2);
         $colabId = (int)$d['colaborador_id'];
-        $stmtHor = $conn->prepare("SELECT fecha, hora_entrada, hora_salida FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND estado IN ('Presente','Validado')");
+        $stmtHor = $conn->prepare("SELECT fecha, hora_entrada, hora_salida FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND estado NOT IN ('Falta','Licencia','Vacaciones')");
         $stmtHor->execute([$colabId, $mes, $anio]);
         $totalOrdSecs = 0;
         while ($rowH = $stmtHor->fetch(PDO::FETCH_ASSOC)) {
@@ -113,7 +131,7 @@ function handleGetDetails($conn) {
         // If horas extras missing, compute from asistencias for display
         $horasExtras = isset($d['horas_extras']) ? (float)$d['horas_extras'] : 0.0;
         if ($horasExtras <= 0) {
-            $stmtEx = $conn->prepare("SELECT SUM(horas_extras) as extras FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
+            $stmtEx = $conn->prepare("SELECT SUM(CASE WHEN horas_extras IS NULL THEN 0 WHEN horas_extras <= 16 THEN horas_extras WHEN horas_extras BETWEEN 100 AND 2359 AND MOD(horas_extras, 100) < 60 THEN LEAST((FLOOR(horas_extras / 100) + (MOD(horas_extras, 100) / 60)), 16) WHEN horas_extras BETWEEN 60 AND 1440 THEN LEAST((horas_extras / 60), 16) ELSE 16 END) as extras FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
             $stmtEx->execute([$colabId, $mes, $anio]);
             $sumEx = $stmtEx->fetch(PDO::FETCH_ASSOC);
             $horasExtras = $sumEx && $sumEx['extras'] ? (float)$sumEx['extras'] : 0.0;
@@ -206,7 +224,8 @@ function handlePlame($conn) {
     $sql = "SELECT d.*, c.nombres, c.apellidos, c.documento_numero, c.regimen_pensionario
             FROM planilla_detalles d
             JOIN colaboradores c ON d.colaborador_id = c.id
-            WHERE d.planilla_id = ?";
+            WHERE d.planilla_id = ?
+            AND LOWER(IFNULL(c.regimen_laboral,'')) <> 'recibo por honorarios'";
     $stmtD = $conn->prepare($sql);
     $stmtD->execute([$id]);
     $details = $stmtD->fetchAll(PDO::FETCH_ASSOC);
@@ -272,7 +291,8 @@ function handlePlameExport($conn) {
     $sql = "SELECT d.*, c.nombres, c.apellidos, c.documento_numero, c.regimen_pensionario
             FROM planilla_detalles d
             JOIN colaboradores c ON d.colaborador_id = c.id
-            WHERE d.planilla_id = ?";
+            WHERE d.planilla_id = ?
+            AND LOWER(IFNULL(c.regimen_laboral,'')) <> 'recibo por honorarios'";
     $stmtD = $conn->prepare($sql);
     $stmtD->execute([$id]);
     $details = $stmtD->fetchAll(PDO::FETCH_ASSOC);
@@ -294,7 +314,7 @@ function handlePlameExport($conn) {
         }
         $fname = "PLAME_REM_{$periodo}.txt";
     } elseif ($file === 'jor') {
-        $stmtHoras = $conn->prepare("SELECT SUM(horas_trabajadas) as ht, SUM(horas_extras) as he FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
+        $stmtHoras = $conn->prepare("SELECT SUM(horas_trabajadas) as ht, SUM(CASE WHEN horas_extras IS NULL THEN 0 WHEN horas_extras <= 16 THEN horas_extras WHEN horas_extras BETWEEN 100 AND 2359 AND MOD(horas_extras, 100) < 60 THEN LEAST((FLOOR(horas_extras / 100) + (MOD(horas_extras, 100) / 60)), 16) WHEN horas_extras BETWEEN 60 AND 1440 THEN LEAST((horas_extras / 60), 16) ELSE 16 END) as he FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
         foreach ($details as $d) {
             $stmtHoras->execute([$d['colaborador_id'], (int)$pl['mes'], (int)$pl['anio']]);
             $sum = $stmtHoras->fetch(PDO::FETCH_ASSOC);
@@ -361,6 +381,8 @@ function handleGenerate($conn) {
         $totalDescuentos = 0;
         $totalNeto = 0;
 
+        $stmtCheckAsist = $conn->prepare("SELECT COUNT(*) FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
+        $sundaysInMonth = countSundaysInMonth($mes, $anio);
         foreach ($colabs as $c) {
             $sueldoFallback = $c['sueldo_base'] ?: getRMV($conn);
             $sueldo = getSueldoContrato($conn, $c['id'], $mes, $anio, $sueldoFallback);
@@ -386,7 +408,7 @@ function handleGenerate($conn) {
                 // --- CALCULO MENSUAL ---
                 
                 // Overtime logic
-                $stmtAsist = $conn->prepare("SELECT SUM(horas_extras) as extras FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
+                $stmtAsist = $conn->prepare("SELECT SUM(CASE WHEN horas_extras IS NULL THEN 0 WHEN horas_extras <= 16 THEN horas_extras WHEN horas_extras BETWEEN 100 AND 2359 AND MOD(horas_extras, 100) < 60 THEN LEAST((FLOOR(horas_extras / 100) + (MOD(horas_extras, 100) / 60)), 16) WHEN horas_extras BETWEEN 60 AND 1440 THEN LEAST((horas_extras / 60), 16) ELSE 16 END) as extras FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
                 $stmtAsist->execute([$c['id'], $mes, $anio]);
                 $resAsist = $stmtAsist->fetch(PDO::FETCH_ASSOC);
                 $horasExtras = $resAsist['extras'] ?: 0;
@@ -404,15 +426,27 @@ function handleGenerate($conn) {
                     }
                     $horasExtras = $extrasCalc;
                 }
+                $stmtCheckAsist->execute([$c['id'], $mes, $anio]);
+                $hasRecords = ((int)$stmtCheckAsist->fetchColumn()) > 0;
+
+                $diasVacaciones = getVacationDays($conn, $c['id'], $mes, $anio);
+
                 // Días trabajados (entrada registrada y estado no Falta/Licencia/Vacaciones)
                 $stmtDias = $conn->prepare("SELECT COUNT(*) FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND hora_entrada IS NOT NULL AND estado NOT IN ('Falta','Licencia','Vacaciones')");
                 $stmtDias->execute([$c['id'], $mes, $anio]);
                 $diasCalc = (int)$stmtDias->fetchColumn();
-                $dias = $diasCalc > 0 ? $diasCalc : $dias;
                 // Dominicales
                 $stmtDom = $conn->prepare("SELECT COUNT(*) FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND hora_entrada IS NOT NULL AND estado NOT IN ('Falta','Licencia','Vacaciones') AND DAYOFWEEK(fecha) = 1");
                 $stmtDom->execute([$c['id'], $mes, $anio]);
                 $dominicales = (int)$stmtDom->fetchColumn();
+
+                $diasDescansoDomingo = max(0, $sundaysInMonth - $dominicales);
+                $diasRemunerados = $diasCalc + $diasDescansoDomingo;
+                $diasTotal = $diasRemunerados + $diasVacaciones;
+                if ($diasTotal > 30) $diasTotal = 30;
+                if ($hasRecords || $diasVacaciones > 0) {
+                    $dias = $diasTotal;
+                }
                 
                 $hourlyRate = ($sueldo / 30) / 8;
                 $he25 = min($horasExtras, 2);
@@ -534,7 +568,7 @@ function handleGenerate($conn) {
                 $inicioStr = $inicioPeriodo->format('Y-m-d');
                 $finStr = $finPeriodo->format('Y-m-d');
                 $hourlyRate = ($sueldo / 30) / 8;
-                $stmtExtras = $conn->prepare("SELECT SUM(horas_extras) as extras FROM asistencias WHERE colaborador_id = ? AND fecha BETWEEN ? AND ? AND estado = 'Validado'");
+                $stmtExtras = $conn->prepare("SELECT SUM(CASE WHEN horas_extras IS NULL THEN 0 WHEN horas_extras <= 16 THEN horas_extras WHEN horas_extras BETWEEN 100 AND 2359 AND MOD(horas_extras, 100) < 60 THEN LEAST((FLOOR(horas_extras / 100) + (MOD(horas_extras, 100) / 60)), 16) WHEN horas_extras BETWEEN 60 AND 1440 THEN LEAST((horas_extras / 60), 16) ELSE 16 END) as extras FROM asistencias WHERE colaborador_id = ? AND fecha BETWEEN ? AND ? AND estado = 'Validado'");
                 $stmtExtras->execute([$c['id'], $inicioStr, $finStr]);
                 $sumExtras = $stmtExtras->fetch(PDO::FETCH_ASSOC);
                 $promHorasExtras = ($sumExtras && $sumExtras['extras']) ? ((float)$sumExtras['extras'] / 6.0) : 0;
@@ -757,7 +791,7 @@ function handleRecalculate($conn) {
             $afpOnpMonto = 0; $tardanzas = 0; $prestamos = 0; $bruto = 0; $neto = 0;
             $asignacionFamiliar = 0; $quintaCategoria = 0; $montoDominicales = 0;
             if ($tipo === 'Mensual') {
-                $stmtAsist = $conn->prepare("SELECT SUM(horas_extras) as extras FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
+                $stmtAsist = $conn->prepare("SELECT SUM(CASE WHEN horas_extras IS NULL THEN 0 WHEN horas_extras <= 16 THEN horas_extras WHEN horas_extras BETWEEN 100 AND 2359 AND MOD(horas_extras, 100) < 60 THEN LEAST((FLOOR(horas_extras / 100) + (MOD(horas_extras, 100) / 60)), 16) WHEN horas_extras BETWEEN 60 AND 1440 THEN LEAST((horas_extras / 60), 16) ELSE 16 END) as extras FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ?");
                 $stmtAsist->execute([$c['id'], $mes, $anio]);
                 $resAsist = $stmtAsist->fetch(PDO::FETCH_ASSOC);
                 $horasExtras = $resAsist['extras'] ?: 0;
@@ -779,9 +813,15 @@ function handleRecalculate($conn) {
                 $stmtDias = $conn->prepare("SELECT COUNT(*) FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND hora_entrada IS NOT NULL AND estado NOT IN ('Falta','Licencia','Vacaciones')");
                 $stmtDias->execute([$c['id'], $mes, $anio]);
                 $diasCalc = (int)$stmtDias->fetchColumn();
-                
+
+                $stmtDom = $conn->prepare("SELECT COUNT(*) FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND hora_entrada IS NOT NULL AND estado NOT IN ('Falta','Licencia','Vacaciones') AND DAYOFWEEK(fecha) = 1");
+                $stmtDom->execute([$c['id'], $mes, $anio]);
+                $dominicales = (int)$stmtDom->fetchColumn();
+
                 $diasVacaciones = getVacationDays($conn, $c['id'], $mes, $anio);
-                $diasTotal = $diasCalc + $diasVacaciones;
+                $diasDescansoDomingo = max(0, countSundaysInMonth($mes, $anio) - $dominicales);
+                $diasRemunerados = $diasCalc + $diasDescansoDomingo;
+                $diasTotal = $diasRemunerados + $diasVacaciones;
                 if ($diasTotal > 30) $diasTotal = 30;
 
                 // Si existen registros de asistencia (incluyendo Faltas), usamos el cálculo real
@@ -792,10 +832,6 @@ function handleRecalculate($conn) {
                 if ($hasRecords || $diasVacaciones > 0) {
                     $dias = $diasTotal;
                 }
-                
-                $stmtDom = $conn->prepare("SELECT COUNT(*) FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND hora_entrada IS NOT NULL AND estado NOT IN ('Falta','Licencia','Vacaciones') AND DAYOFWEEK(fecha) = 1");
-                $stmtDom->execute([$c['id'], $mes, $anio]);
-                $dominicales = (int)$stmtDom->fetchColumn();
                 $hourlyRate = ($sueldo / 30) / 8;
                 $he25 = min($horasExtras, 2);
                 $he35 = max($horasExtras - 2, 0);
@@ -887,7 +923,7 @@ function handleRecalculate($conn) {
                 $inicioStr = $inicioPeriodo->format('Y-m-d');
                 $finStr = $finPeriodo->format('Y-m-d');
                 $hourlyRate = ($sueldo / 30) / 8;
-                $stmtExtras = $conn->prepare("SELECT SUM(horas_extras) as extras FROM asistencias WHERE colaborador_id = ? AND fecha BETWEEN ? AND ? AND estado = 'Validado'");
+                $stmtExtras = $conn->prepare("SELECT SUM(CASE WHEN horas_extras IS NULL THEN 0 WHEN horas_extras <= 16 THEN horas_extras WHEN horas_extras BETWEEN 100 AND 2359 AND MOD(horas_extras, 100) < 60 THEN LEAST((FLOOR(horas_extras / 100) + (MOD(horas_extras, 100) / 60)), 16) WHEN horas_extras BETWEEN 60 AND 1440 THEN LEAST((horas_extras / 60), 16) ELSE 16 END) as extras FROM asistencias WHERE colaborador_id = ? AND fecha BETWEEN ? AND ? AND estado = 'Validado'");
                 $stmtExtras->execute([$c['id'], $inicioStr, $finStr]);
                 $sumExtras = $stmtExtras->fetch(PDO::FETCH_ASSOC);
                 $promHorasExtras = ($sumExtras && $sumExtras['extras']) ? ((float)$sumExtras['extras'] / 6.0) : 0;
@@ -1133,7 +1169,12 @@ function getAsignacionFamiliarContratoAny($conn, $colabId) {
     return null;
 }
 function getColaboradoresParaPeriodo($conn, $mes, $anio) {
-    $stmt = $conn->query("SELECT * FROM colaboradores ORDER BY apellidos, nombres");
+    $stmt = $conn->query("
+        SELECT *
+        FROM colaboradores
+        WHERE LOWER(IFNULL(regimen_laboral,'')) <> 'recibo por honorarios'
+        ORDER BY apellidos, nombres
+    ");
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 function calcularQuintaCategoriaConAcumulado($conn, $colabId, $sueldo, $asigFam, $extrasMes, $uit, $mes, $anio) {
@@ -1196,8 +1237,21 @@ function getHorarioEntradaPorFecha($conn, $fecha) {
     }
     return null;
 }
+function countSundaysInMonth($month, $year) {
+    $month = (int)$month;
+    $year = (int)$year;
+    if ($month < 1 || $month > 12 || $year < 1900) return 0;
+    $date = new DateTime(sprintf('%04d-%02d-01', $year, $month));
+    $end = (clone $date)->modify('last day of this month');
+    $count = 0;
+    while ($date <= $end) {
+        if ((int)$date->format('w') === 0) $count++;
+        $date->modify('+1 day');
+    }
+    return $count;
+}
 function calcularNocturnidadHoras($conn, $colabId, $mes, $anio) {
-    $stmt = $conn->prepare("SELECT hora_entrada, hora_salida FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND estado IN ('Presente','Validado')");
+    $stmt = $conn->prepare("SELECT hora_entrada, hora_salida FROM asistencias WHERE colaborador_id = ? AND MONTH(fecha) = ? AND YEAR(fecha) = ? AND estado NOT IN ('Falta','Licencia','Vacaciones')");
     $stmt->execute([$colabId, $mes, $anio]);
     $totalSecs = 0;
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {

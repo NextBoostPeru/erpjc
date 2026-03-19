@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
@@ -27,6 +28,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 $resource = $_GET['resource'] ?? 'vacantes'; // vacantes, postulantes, entrevistas
 
 try {
+    rbac_require($conn, $userData, 'reclutamiento', $method);
+
     switch ($resource) {
         case 'vacantes':
             handleVacantes($conn, $method);

@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require_once '../vendor/autoload.php';
 
 use Dompdf\Dompdf;
@@ -27,6 +28,38 @@ $action = $_GET['action'] ?? null;
 $jwt = new JWTHandler();
 $token = $jwt->getBearerToken();
 $userData = $jwt->validateToken($token);
+
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+function rbac_require_any(PDO $conn, $userData, array $moduleCodes, string $method, ?string $perm = null): array {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = $perm ?? rbac_required_perm_for_request($method);
+
+    foreach ($moduleCodes as $code) {
+        if (rbac_can($conn, (int)$rolId, (string)$rolNombre, (string)$code, $required)) {
+            return [$userId, $rolId, $rolNombre, $required, $code];
+        }
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => $moduleCodes[0] ?? '',
+        "modulos" => $moduleCodes,
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require_any($conn, $userData, ['boletas_pago', 'boletas'], $method);
 
 function getEmpresaConfig($conn) {
     $stmt = $conn->query("SELECT configuracion_sunat FROM empresa_datos LIMIT 1");
@@ -80,6 +113,9 @@ function generateBoletaData($detalleId, $withSignature, $conn) {
 
     if (!$row) {
         throw new Exception("Detalle no encontrado");
+    }
+    if (isset($row['regimen_laboral']) && strtolower(trim((string)$row['regimen_laboral'])) === 'recibo por honorarios') {
+        throw new Exception("No aplica boleta: colaborador en Recibo por Honorarios");
     }
 
     $contrato = getContratoPeriodo($conn, (int)$row['colaborador_id'], (int)$row['mes'], (int)$row['anio']);
@@ -510,7 +546,13 @@ try {
     if ($method === 'GET' && $action === 'list_planillas') {
         // List planillas that have details (generated)
         $sql = "SELECT p.id, p.mes, p.anio, p.estado, 
-                       (SELECT COUNT(*) FROM planilla_detalles WHERE planilla_id = p.id) as num_colaboradores
+                       (
+                           SELECT COUNT(*)
+                           FROM planilla_detalles d
+                           JOIN colaboradores c ON d.colaborador_id = c.id
+                           WHERE d.planilla_id = p.id
+                           AND LOWER(IFNULL(c.regimen_laboral,'')) <> 'recibo por honorarios'
+                       ) as num_colaboradores
                 FROM planillas p
                 ORDER BY p.anio DESC, p.mes DESC";
         $stmt = $conn->prepare($sql);
@@ -526,6 +568,7 @@ try {
                 FROM planilla_detalles d
                 JOIN colaboradores c ON d.colaborador_id = c.id
                 WHERE d.planilla_id = ?
+                AND LOWER(IFNULL(c.regimen_laboral,'')) <> 'recibo por honorarios'
                 ORDER BY c.apellidos, c.nombres";
         $stmt = $conn->prepare($sql);
         $stmt->execute([$planillaId]);

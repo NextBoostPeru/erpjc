@@ -9,6 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+include_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
+
 // Configuración
 $logDir = __DIR__ . '/../logs';
 if (!is_dir($logDir)) {
@@ -65,6 +69,18 @@ function getLogs($dir, $filters = [], $limit = 1000) {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require($conn, $userData, 'logs', $method);
 
 if ($method === 'GET') {
     if (isset($_GET['stats'])) {

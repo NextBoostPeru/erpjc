@@ -1,10 +1,26 @@
 <?php
 require_once '../vendor/autoload.php';
 require_once '../config/db.php';
+require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 use PhpOffice\PhpWord\TemplateProcessor;
 
-$id = $_GET['id'] ?? 0;
+$jwtHandler = new JWTHandler();
+$token = $jwtHandler->getBearerToken();
+$token = $token ?: ($_REQUEST['token'] ?? '');
+$userData = $jwtHandler->validateToken($token);
+if (!$userData) {
+    http_response_code(401);
+    header("Content-Type: application/json; charset=UTF-8");
+    echo json_encode(["message" => "Acceso no autorizado"]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require($conn, $userData, 'gestion_iso', 'GET', 'lectura');
+
+$id = (int)($_REQUEST['id'] ?? 0);
 
 if (!$id) {
     die("Audit ID is required");

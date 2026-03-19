@@ -15,13 +15,12 @@ ini_set('display_errors', 1);
 header("Content-Type: application/json; charset=UTF-8");
 
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require_once __DIR__ . '/includes/facturacion_functions.php';
 
 $action = $_GET['action'] ?? '';
 
-// Auth check (simplified for now, mimicking facturacion.php)
-// In production, uncomment JWT validation
-/*
+// Auth check
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
 $userData = $jwtHandler->validateToken($token);
@@ -30,7 +29,8 @@ if (!$userData) {
     echo json_encode(["message" => "Acceso no autorizado"]);
     exit;
 }
-*/
+$method = $_SERVER['REQUEST_METHOD'];
+rbac_require($conn, $userData, 'retenciones', $method);
 
 switch ($action) {
     case 'listar':

@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 require_once '../vendor/autoload.php';
 
 use Dompdf\Dompdf;
@@ -33,6 +34,31 @@ if (!$userData) {
     if (isset($conn)) $conn = null;
     exit;
 }
+
+function rbac_require_any(PDO $conn, $userData, array $moduleCodes, string $method, ?string $perm = null): array {
+    rbac_ensure_roles_modulos_schema($conn);
+    [$userId, $rolId, $rolNombre] = rbac_get_user_role($conn, $userData);
+    $required = $perm ?? rbac_required_perm_for_request($method);
+
+    foreach ($moduleCodes as $code) {
+        if (rbac_can($conn, (int)$rolId, (string)$rolNombre, (string)$code, $required)) {
+            return [$userId, $rolId, $rolNombre, $required, $code];
+        }
+    }
+
+    http_response_code(403);
+    echo json_encode([
+        "message" => "No tienes permiso para esta acción",
+        "forbidden" => true,
+        "modulo" => $moduleCodes[0] ?? '',
+        "modulos" => $moduleCodes,
+        "permiso" => $required
+    ]);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+rbac_require_any($conn, $userData, ['certificados_constancias', 'certificados'], $method);
 
 try {
     $conn->exec("
@@ -167,6 +193,9 @@ try {
         $nombre_completo = mb_strtoupper($colab['nombres'] . ' ' . $colab['apellidos']);
         $dni = $colab['documento_numero'];
         $cargo = mb_strtoupper($colab['cargo'] ?? '');
+        if (!empty($data['cargo'])) {
+            $cargo = mb_strtoupper((string)$data['cargo']);
+        }
         
         // Fechas
         $fecha_inicio = !empty($colab['fecha_ingreso']) ? date('d/m/Y', strtotime($colab['fecha_ingreso'])) : '';
@@ -197,8 +226,22 @@ try {
                 }
             } catch (Exception $e) {}
         }
+
+        if (!empty($data['fecha_inicio'])) {
+            $fecha_inicio_db = $data['fecha_inicio'];
+        }
+        if (!empty($data['fecha_fin'])) {
+            $fecha_fin_db = $data['fecha_fin'];
+        } elseif (array_key_exists('fecha_fin', $data) && empty($data['fecha_fin'])) {
+            $fecha_fin_db = null;
+        }
+
+        $fecha_inicio = !empty($fecha_inicio_db) ? date('d/m/Y', strtotime($fecha_inicio_db)) : '';
+        $fecha_fin = !empty($fecha_fin_db) ? date('d/m/Y', strtotime($fecha_fin_db)) : 'la actualidad';
         
         $dirigido_a = !empty($data['dirigido_a']) ? $data['dirigido_a'] : 'A quien corresponda';
+        $dirigido_a_safe = htmlspecialchars($dirigido_a, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $cargo_safe = htmlspecialchars($cargo, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         // Representante Legal (tomar Gerente activo como representante por defecto)
         $rep_nombre = null;
@@ -262,19 +305,21 @@ try {
             $fi_literal = $toFechaLiteral($fecha_inicio_db);
             $ff_literal = !empty($fecha_fin_db) ? $toFechaLiteral($fecha_fin_db) : 'la actualidad';
             $cuerpo = "
+            <p><strong>DIRIGIDO A:</strong> {$dirigido_a_safe}</p>
             <p>La que suscribe, <strong>{$rep_nombre}</strong>, identificada con DNI Nº <strong>{$rep_dni}</strong>, representante legal de la empresa <strong>{$empresa['razon_social']}</strong>, con RUC <strong>{$empresa['ruc']}</strong>.</p>
             <p style='text-align: center; margin: 25px 0; font-weight: bold;'>CERTIFICA QUE:</p>
             <p style='text-align: center; font-size: 14pt; margin: 10px 0;'><strong>{$nombre_completo}</strong></p>
-            <p>Identificado(a) con DNI Nº <strong>{$dni}</strong>, ha laborado como <strong>{$cargo}</strong>, durante el periodo comprendido desde el <strong>{$fi_literal}</strong>, hasta el <strong>{$ff_literal}</strong>, demostrando durante su permanencia responsabilidad, honestidad y dedicación a las labores que le fueron asignadas.</p>
+            <p>Identificado(a) con DNI Nº <strong>{$dni}</strong>, ha laborado como <strong>{$cargo_safe}</strong>, durante el periodo comprendido desde el <strong>{$fi_literal}</strong>, hasta el <strong>{$ff_literal}</strong>, demostrando durante su permanencia responsabilidad, honestidad y dedicación a las labores que le fueron asignadas.</p>
             <p>Se expide el presente certificado para los fines que la parte interesada crea conveniente.</p>
             <p style='margin-top: 20px;'>Atentamente.</p>
             ";
         } elseif ($data['tipo_documento'] === 'CPS') {
             $titulo = "CONSTANCIA DE PRESTACIÓN DE SERVICIOS";
             $cuerpo = "
+            <p><strong>DIRIGIDO A:</strong> {$dirigido_a_safe}</p>
             <p>Por medio del presente documento, <strong>{$empresa['nombre']}</strong>, identificada con RUC N° <strong>{$empresa['ruc']}</strong>, con domicilio legal en {$empresa['direccion']}.</p>
             <p style='text-align: center; margin: 30px 0;'><strong>HACE CONSTAR:</strong></p>
-            <p>Que el Sr./Sra. <strong>{$nombre_completo}</strong>, identificado(a) con DNI N° <strong>{$dni}</strong>, ha prestado servicios profesionales independientes en calidad de Locador de Servicios, desempeñándose como <strong>{$cargo}</strong> desde el <strong>{$fecha_inicio}</strong> hasta <strong>{$fecha_fin}</strong>.</p>
+            <p>Que el Sr./Sra. <strong>{$nombre_completo}</strong>, identificado(a) con DNI N° <strong>{$dni}</strong>, ha prestado servicios profesionales independientes en calidad de Locador de Servicios, desempeñándose como <strong>{$cargo_safe}</strong> desde el <strong>{$fecha_inicio}</strong> hasta <strong>{$fecha_fin}</strong>.</p>
             <p>La presente constancia se expide a solicitud del interesado(a) para los fines que considere pertinentes, dejando expresa constancia que la relación contractual fue de naturaleza civil y no laboral.</p>
             ";
         }

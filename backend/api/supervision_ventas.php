@@ -1,6 +1,7 @@
 <?php
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 $jwtHandler = new JWTHandler();
 $token = $jwtHandler->getBearerToken();
@@ -13,6 +14,9 @@ if (!$userData) {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+$rbacUserData = is_object($userData) ? (array)$userData : $userData;
+rbac_require($conn, $rbacUserData, 'supervision_ventas', $method);
+
 $action = $_GET['action'] ?? '';
 $startDate = $_GET['start_date'] ?? date('Y-m-01');
 $endDate = $_GET['end_date'] ?? date('Y-m-d');

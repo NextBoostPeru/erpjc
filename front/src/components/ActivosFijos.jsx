@@ -9,6 +9,9 @@ const ActivosFijos = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const limit = 20;
     
     // Form State
     const [formData, setFormData] = useState({
@@ -27,6 +30,7 @@ const ActivosFijos = () => {
 
     const fetchActivos = async (currentPage) => {
         try {
+            setLoading(true);
             const token = localStorage.getItem('token');
             const response = await axios.get(`${API_URL}activos_fijos.php?page=${currentPage}&limit=${limit}`, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -54,7 +58,7 @@ const ActivosFijos = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('token');
-            await axios.post(`${API_URL}api/activos_fijos.php`, formData, {
+            await axios.post(`${API_URL}activos_fijos.php`, formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             toast.success("Activo registrado correctamente");
@@ -68,7 +72,7 @@ const ActivosFijos = () => {
                 valor_residual: 0,
                 estado: 'Activo'
             });
-            fetchActivos();
+            fetchActivos(page);
         } catch (error) {
             console.error("Error saving activo", error);
             toast.error("Error al guardar activo");
@@ -83,7 +87,7 @@ const ActivosFijos = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
             toast.success("Activo eliminado");
-            fetchActivos();
+            fetchActivos(page);
         } catch (error) {
             console.error("Error deleting activo", error);
             toast.error("Error al eliminar activo");

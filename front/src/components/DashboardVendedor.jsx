@@ -13,6 +13,11 @@ const DashboardVendedor = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
@@ -20,7 +25,7 @@ const DashboardVendedor = () => {
   const fetchDashboardData = async () => {
       try {
         const res = await axios.get(`${API_URL}dashboard_vendedor.php`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+          headers: getAuthHeaders()
         });
       setStats(res.data);
     } catch (err) {

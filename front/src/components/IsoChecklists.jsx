@@ -232,13 +232,49 @@ const IsoChecklists = () => {
                     {currentAudit.id && (
                         <>
                             <button 
-                                onClick={() => window.open(`${API_URL}iso_pdf.php?id=${currentAudit.id}`, '_blank')}
+                                onClick={() => {
+                                    const token = localStorage.getItem('token') || '';
+                                    const form = document.createElement('form');
+                                    form.method = 'POST';
+                                    form.action = `${API_URL}iso_pdf.php`;
+                                    form.target = '_blank';
+                                    const append = (name, value) => {
+                                        const input = document.createElement('input');
+                                        input.type = 'hidden';
+                                        input.name = name;
+                                        input.value = value;
+                                        form.appendChild(input);
+                                    };
+                                    append('id', String(currentAudit.id));
+                                    if (token) append('token', token);
+                                    document.body.appendChild(form);
+                                    form.submit();
+                                    document.body.removeChild(form);
+                                }}
                                 className="bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-700"
                             >
                                 <Printer size={20} /> PDF
                             </button>
                             <button 
-                                onClick={() => window.open(`${API_URL}iso_word.php?id=${currentAudit.id}`, '_blank')}
+                                onClick={() => {
+                                    const token = localStorage.getItem('token') || '';
+                                    const form = document.createElement('form');
+                                    form.method = 'POST';
+                                    form.action = `${API_URL}iso_word.php`;
+                                    form.target = '_blank';
+                                    const append = (name, value) => {
+                                        const input = document.createElement('input');
+                                        input.type = 'hidden';
+                                        input.name = name;
+                                        input.value = value;
+                                        form.appendChild(input);
+                                    };
+                                    append('id', String(currentAudit.id));
+                                    if (token) append('token', token);
+                                    document.body.appendChild(form);
+                                    form.submit();
+                                    document.body.removeChild(form);
+                                }}
                                 className="bg-blue-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-900"
                             >
                                 <Printer size={20} /> Word

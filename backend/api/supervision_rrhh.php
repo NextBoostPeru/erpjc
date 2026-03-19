@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 try {
     $jwt = new JWTHandler();
@@ -34,6 +35,8 @@ try {
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    rbac_require($conn, $user_data, 'supervision_rrhh', $method);
+
     if ($method === 'GET') {
         $action = $_GET['action'] ?? '';
         

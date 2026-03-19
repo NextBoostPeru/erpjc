@@ -20,7 +20,8 @@ const GestionPermisos = () => {
   const [roleSearch, setRoleSearch] = useState('');
   
   // Permissions State
-  const [canWrite, setCanWrite] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [canDelete, setCanDelete] = useState(false);
 
   // Filters
@@ -36,9 +37,39 @@ const GestionPermisos = () => {
     rol_id: '',
     modulo_id: '',
     permiso_lectura: 1,
-    permiso_escritura: 1,
-    permiso_eliminacion: 1
+    permiso_crear: 0,
+    permiso_editar: 0,
+    permiso_eliminacion: 0
   });
+  const [editingAssignmentId, setEditingAssignmentId] = useState(null);
+  const canWrite = canCreate || canEdit;
+
+  const myRoleId = (() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') || 'null');
+      return Number(u?.rol_id || u?.rolId || u?.role_id || 0);
+    } catch (e) {
+      return 0;
+    }
+  })();
+
+  const refreshMyModules = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}my_modules.php`, {
+        headers: { Authorization: `Bearer ${token}` },
+        _suppressForbiddenToast: true
+      });
+      const mods = Array.isArray(res.data) ? res.data : (res.data.modulos || []);
+      if (!Array.isArray(mods)) return;
+      if (mods.length === 0) return;
+      localStorage.setItem('modulos', JSON.stringify(mods));
+      window.dispatchEvent(new CustomEvent('erpjc:modules_updated', { detail: mods }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     const checkPermissions = async () => {
@@ -51,7 +82,8 @@ const GestionPermisos = () => {
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        setCanWrite(response.data.escritura === 1);
+        setCanCreate(response.data.crear === 1);
+        setCanEdit(response.data.editar === 1);
         setCanDelete(response.data.eliminacion === 1);
         sessionStorage.setItem(cacheKey, JSON.stringify(response.data));
       } catch (error) {
@@ -59,7 +91,11 @@ const GestionPermisos = () => {
         const modulos = JSON.parse(localStorage.getItem('modulos')) || [];
         const currentModule = modulos.find(m => m.codigo === 'permisos');
         if (currentModule) {
-          setCanWrite(currentModule.permiso_escritura === 1);
+          const canCreateLocal = Number(currentModule.permiso_crear) === 1;
+          const canEditLocal = Number(currentModule.permiso_editar) === 1;
+          const canWriteLocal = Number(currentModule.permiso_escritura) === 1;
+          setCanCreate(canCreateLocal || canWriteLocal);
+          setCanEdit(canEditLocal || canWriteLocal);
           setCanDelete(currentModule.permiso_eliminacion === 1);
         }
       }
@@ -177,19 +213,31 @@ const GestionPermisos = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      // Enviamos token en URL para asegurar autenticación
-      await axios.post(`${API_URL}roles_modulos.php?token=${token}`, formData, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success("Permiso asignado correctamente");
+      const affectedRoleId = Number(formData.rol_id || 0);
+      if (editingAssignmentId) {
+        await axios.put(`${API_URL}roles_modulos.php?token=${token}`, { ...formData, id: editingAssignmentId }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success("Permisos actualizados");
+      } else {
+        await axios.post(`${API_URL}roles_modulos.php?token=${token}`, formData, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        toast.success("Permiso asignado correctamente");
+      }
+      if (affectedRoleId && myRoleId && affectedRoleId === myRoleId) {
+        await refreshMyModules();
+      }
       setModalOpen(false);
+      setEditingAssignmentId(null);
       fetchData(page);
       setFormData({
         rol_id: '',
         modulo_id: '',
         permiso_lectura: 1,
-        permiso_escritura: 1,
-        permiso_eliminacion: 1
+        permiso_crear: 0,
+        permiso_editar: 0,
+        permiso_eliminacion: 0
       });
     } catch (error) {
       toast.error(error.response?.data?.message || "Error al asignar permiso");
@@ -197,18 +245,17 @@ const GestionPermisos = () => {
   };
 
   const handleToggleAccess = async (item) => {
-    const currentAccess = Number(item.permiso_lectura) === 1 
-      || Number(item.permiso_escritura) === 1 
-      || Number(item.permiso_eliminacion) === 1;
+    const currentAccess = Number(item.permiso_lectura) === 1;
     const newValue = currentAccess ? 0 : 1;
 
     const updatedAssignments = assignments.map(a =>
       (a.modulo_id === item.modulo_id && a.rol_id === item.rol_id)
         ? { 
             ...a, 
-            permiso_lectura: newValue, 
-            permiso_escritura: newValue, 
-            permiso_eliminacion: newValue 
+            permiso_lectura: newValue,
+            permiso_crear: newValue ? Number(a.permiso_crear || 0) : 0,
+            permiso_editar: newValue ? Number(a.permiso_editar || 0) : 0,
+            permiso_eliminacion: newValue ? Number(a.permiso_eliminacion || 0) : 0
           }
         : a
     );
@@ -220,24 +267,32 @@ const GestionPermisos = () => {
         await axios.put(`${API_URL}roles_modulos.php?token=${token}`, {
           id: item.id,
           permiso_lectura: newValue,
-          permiso_escritura: newValue,
-          permiso_eliminacion: newValue
+          permiso_crear: newValue ? Number(item.permiso_crear || 0) : 0,
+          permiso_editar: newValue ? Number(item.permiso_editar || 0) : 0,
+          permiso_eliminacion: newValue ? Number(item.permiso_eliminacion || 0) : 0
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
         toast.success("Acceso actualizado");
+        if (Number(item.rol_id || 0) && myRoleId && Number(item.rol_id || 0) === myRoleId) {
+          await refreshMyModules();
+        }
       } else {
         const payload = {
           rol_id: item.rol_id,
           modulo_id: item.modulo_id,
           permiso_lectura: newValue,
-          permiso_escritura: newValue,
-          permiso_eliminacion: newValue
+          permiso_crear: 0,
+          permiso_editar: 0,
+          permiso_eliminacion: 0
         };
         await axios.post(`${API_URL}roles_modulos.php?token=${token}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
         toast.success("Acceso asignado");
+        if (Number(item.rol_id || 0) && myRoleId && Number(item.rol_id || 0) === myRoleId) {
+          await refreshMyModules();
+        }
         fetchData(page);
       }
     } catch (error) {
@@ -246,14 +301,43 @@ const GestionPermisos = () => {
     }
   };
 
+  const openAssignModal = (assignment = null) => {
+    if (assignment) {
+      setEditingAssignmentId(assignment.id || null);
+      setFormData({
+        rol_id: assignment.rol_id,
+        modulo_id: assignment.modulo_id,
+        permiso_lectura: Number(assignment.permiso_lectura) === 1 ? 1 : 0,
+        permiso_crear: Number(assignment.permiso_crear) === 1 ? 1 : 0,
+        permiso_editar: Number(assignment.permiso_editar) === 1 ? 1 : 0,
+        permiso_eliminacion: Number(assignment.permiso_eliminacion) === 1 ? 1 : 0
+      });
+    } else {
+      setEditingAssignmentId(null);
+      setFormData({
+        rol_id: '',
+        modulo_id: '',
+        permiso_lectura: 1,
+        permiso_crear: 0,
+        permiso_editar: 0,
+        permiso_eliminacion: 0
+      });
+    }
+    setModalOpen(true);
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('¿Eliminar esta asignación?')) return;
     try {
       const token = localStorage.getItem('token');
+      const assignment = assignments.find(a => String(a.id) === String(id));
       await axios.delete(`${API_URL}roles_modulos.php?id=${id}&token=${token}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       toast.success("Asignación eliminada");
+      if (Number(assignment?.rol_id || 0) && myRoleId && Number(assignment?.rol_id || 0) === myRoleId) {
+        await refreshMyModules();
+      }
       fetchData(page);
     } catch (error) {
       toast.error("Error al eliminar");
@@ -268,12 +352,12 @@ const GestionPermisos = () => {
             <Shield className="text-blue-600" size={32} />
             Gestión de Permisos
           </h1>
-          <p className="text-gray-500 mt-1">Asigna módulos y define permisos por rol</p>
+          <p className="text-gray-500 mt-1">Asigna módulos y define permisos por rol (ver/agregar/editar/eliminar)</p>
         </div>
         
-        {canWrite && (
+        {canCreate && (
         <button 
-          onClick={() => setModalOpen(true)}
+          onClick={() => openAssignModal(null)}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg flex items-center gap-2 shadow-lg transition-all"
         >
           <Plus size={20} />
@@ -304,7 +388,7 @@ const GestionPermisos = () => {
                 <Search size={18} />
               </button>
             </div>
-            {canWrite && (
+            {canCreate && (
               <button
                 onClick={openNewRole}
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow"
@@ -335,7 +419,7 @@ const GestionPermisos = () => {
                     <td className="p-4 font-medium text-gray-800">{r.nombre}</td>
                     <td className="p-4 text-gray-600">{r.descripcion || '-'}</td>
                     <td className="p-4 text-center">
-                      {canWrite && (
+                      {canEdit && (
                         <button
                           onClick={() => openEditRole(r)}
                           className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg mr-2"
@@ -390,15 +474,18 @@ const GestionPermisos = () => {
               <tr className="bg-gray-50 text-gray-600 text-sm uppercase tracking-wider">
                 <th className="p-4 border-b">Rol</th>
                 <th className="p-4 border-b">Módulo</th>
-                <th className="p-4 border-b text-center">Acceso</th>
+                <th className="p-4 border-b text-center">Ver</th>
+                <th className="p-4 border-b text-center">Agregar</th>
+                <th className="p-4 border-b text-center">Editar</th>
+                <th className="p-4 border-b text-center">Eliminar</th>
                 <th className="p-4 border-b text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan="4" className="p-8 text-center text-gray-500">Cargando...</td></tr>
+                <tr><td colSpan="7" className="p-8 text-center text-gray-500">Cargando...</td></tr>
               ) : !assignments || assignments.length === 0 ? (
-                <tr><td colSpan="4" className="p-8 text-center text-gray-500">No hay asignaciones.</td></tr>
+                <tr><td colSpan="7" className="p-8 text-center text-gray-500">No hay asignaciones.</td></tr>
               ) : (
                 assignments.map(item => (
                   <tr key={item.id || `${item.rol_id}-${item.modulo_id}`} className="hover:bg-gray-50 transition-colors">
@@ -414,22 +501,51 @@ const GestionPermisos = () => {
                         onClick={() => canWrite && handleToggleAccess(item)}
                         disabled={!canWrite}
                         className={`p-1 rounded-full transition-colors ${
-                          (Number(item.permiso_lectura) === 1 
-                            || Number(item.permiso_escritura) === 1 
-                            || Number(item.permiso_eliminacion) === 1)
+                          (Number(item.permiso_lectura) === 1)
                             ? 'text-green-600 bg-green-50 hover:bg-green-100'
                             : 'text-gray-300 hover:text-gray-500'
                         } ${!canWrite ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
-                        {(Number(item.permiso_lectura) === 1 
-                          || Number(item.permiso_escritura) === 1 
-                          || Number(item.permiso_eliminacion) === 1)
+                        {(Number(item.permiso_lectura) === 1)
                           ? <CheckCircle size={20} />
                           : <XCircle size={20} />}
                       </button>
                     </td>
 
                     <td className="p-4 text-center">
+                      {Number(item.permiso_crear) === 1 ? (
+                        <CheckCircle size={18} className="inline text-green-600" />
+                      ) : (
+                        <XCircle size={18} className="inline text-gray-300" />
+                      )}
+                    </td>
+
+                    <td className="p-4 text-center">
+                      {Number(item.permiso_editar) === 1 ? (
+                        <CheckCircle size={18} className="inline text-green-600" />
+                      ) : (
+                        <XCircle size={18} className="inline text-gray-300" />
+                      )}
+                    </td>
+
+                    <td className="p-4 text-center">
+                      {Number(item.permiso_eliminacion) === 1 ? (
+                        <CheckCircle size={18} className="inline text-green-600" />
+                      ) : (
+                        <XCircle size={18} className="inline text-gray-300" />
+                      )}
+                    </td>
+
+                    <td className="p-4 text-center">
+                      {canEdit && (
+                        <button
+                          onClick={() => openAssignModal(item)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors mr-1"
+                          title="Editar permisos"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                      )}
                       {canDelete && item.id && (
                       <button 
                         onClick={() => handleDelete(item.id)}
@@ -478,8 +594,8 @@ const GestionPermisos = () => {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">Asignar Nuevo Permiso</h2>
-              <button onClick={() => setModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-xl font-bold text-gray-800">{editingAssignmentId ? 'Editar Permisos' : 'Asignar Nuevo Permiso'}</h2>
+              <button onClick={() => { setModalOpen(false); setEditingAssignmentId(null); }} className="text-gray-400 hover:text-gray-600">
                 <XCircle size={24} />
               </button>
             </div>
@@ -491,6 +607,7 @@ const GestionPermisos = () => {
                     required
                     value={formData.rol_id}
                     onChange={(e) => setFormData({...formData, rol_id: e.target.value})}
+                    disabled={!!editingAssignmentId}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                     <option value="">Seleccionar Rol</option>
@@ -504,6 +621,7 @@ const GestionPermisos = () => {
                     required
                     value={formData.modulo_id}
                     onChange={(e) => setFormData({...formData, modulo_id: e.target.value})}
+                    disabled={!!editingAssignmentId}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                 >
                     <option value="">Seleccionar Módulo</option>
@@ -521,20 +639,57 @@ const GestionPermisos = () => {
                       setFormData({
                         ...formData,
                         permiso_lectura: v,
-                        permiso_escritura: v,
-                        permiso_eliminacion: v
+                        permiso_crear: v ? formData.permiso_crear : 0,
+                        permiso_editar: v ? formData.permiso_editar : 0,
+                        permiso_eliminacion: v ? formData.permiso_eliminacion : 0
                       });
                     }}
                     className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
-                  <span className="text-gray-700">Acceso al módulo</span>
+                  <span className="text-gray-700">Ver módulo</span>
+                </label>
+
+                <label className={`flex items-center gap-2 cursor-pointer ${formData.permiso_lectura !== 1 ? 'opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    disabled={formData.permiso_lectura !== 1}
+                    checked={formData.permiso_crear === 1}
+                    onChange={(e) => setFormData({ ...formData, permiso_crear: e.target.checked ? 1 : 0 })}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">Agregar</span>
+                </label>
+
+                <label className={`flex items-center gap-2 cursor-pointer ${formData.permiso_lectura !== 1 ? 'opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    disabled={formData.permiso_lectura !== 1}
+                    checked={formData.permiso_editar === 1}
+                    onChange={(e) => setFormData({ ...formData, permiso_editar: e.target.checked ? 1 : 0 })}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">Editar</span>
+                </label>
+
+                <label className={`flex items-center gap-2 cursor-pointer ${formData.permiso_lectura !== 1 ? 'opacity-50' : ''}`}>
+                  <input
+                    type="checkbox"
+                    disabled={formData.permiso_lectura !== 1}
+                    checked={formData.permiso_eliminacion === 1}
+                    onChange={(e) => setFormData({ ...formData, permiso_eliminacion: e.target.checked ? 1 : 0 })}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">Eliminar</span>
                 </label>
               </div>
 
               <div className="pt-4 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setModalOpen(false)}
+                  onClick={() => {
+                    setModalOpen(false);
+                    setEditingAssignmentId(null);
+                  }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                 >
                   Cancelar

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import axios from 'axios';
 import { API_URL } from '../api/config';
 import { toast } from 'react-hot-toast';
@@ -9,7 +9,10 @@ const CertificadosConstancias = () => {
     const [formData, setFormData] = useState({
         colaborador_id: '',
         tipo_documento: 'CT',
-        dirigido_a: ''
+        dirigido_a: '',
+        cargo: '',
+        fecha_inicio: '',
+        fecha_fin: ''
     });
     const [loading, setLoading] = useState(false);
     
@@ -34,6 +37,11 @@ const CertificadosConstancias = () => {
     const [firmaFile, setFirmaFile] = useState(null);
     const [firmaPreview, setFirmaPreview] = useState(null);
 
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('token') || '';
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    };
+
     useEffect(() => {
         fetchColaboradores();
         fetchHistorial();
@@ -42,16 +50,11 @@ const CertificadosConstancias = () => {
 
     const fetchColaboradores = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/certificados.php?action=list_candidates`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_URL}certificados.php?action=list_candidates`, { headers: getAuthHeaders() });
             if (Array.isArray(response.data) && response.data.length > 0) {
                 setColaboradores(response.data);
             } else {
-                const resp2 = await axios.get(`${API_URL}/colaboradores.php?page=1&limit=500`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const resp2 = await axios.get(`${API_URL}colaboradores.php?page=1&limit=500`, { headers: getAuthHeaders() });
                 const rows = Array.isArray(resp2.data?.data) ? resp2.data.data : [];
                 setColaboradores(rows.map(r => ({
                     id: r.id,
@@ -59,7 +62,8 @@ const CertificadosConstancias = () => {
                     apellidos: r.apellidos,
                     documento_numero: r.documento_numero,
                     cargo: r.cargo,
-                    tipo_contrato: r.tipo_contrato
+                    tipo_contrato: r.tipo_contrato,
+                    fecha_ingreso: r.fecha_ingreso
                 })));
             }
         } catch (error) {
@@ -71,10 +75,7 @@ const CertificadosConstancias = () => {
     const fetchHistorial = async (newPage = 1) => {
         try {
             setHistLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/certificados.php?action=history&page=${newPage}&limit=10`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_URL}certificados.php?action=history&page=${newPage}&limit=10`, { headers: getAuthHeaders() });
             setHistorial(response.data.data || []);
             setTotalPages(Math.ceil(response.data.total / response.data.limit));
             setPage(newPage);
@@ -88,10 +89,7 @@ const CertificadosConstancias = () => {
     const fetchFirmas = async () => {
         try {
             setFirmasLoading(true);
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/certificados.php?action=firmas`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_URL}certificados.php?action=firmas`, { headers: getAuthHeaders() });
             setFirmas(Array.isArray(response.data) ? response.data : []);
         } catch (error) {
             console.error('Error cargando firmas', error);
@@ -106,10 +104,7 @@ const CertificadosConstancias = () => {
         setLoading(true);
 
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.post(`${API_URL}/certificados.php?action=generate`, formData, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.post(`${API_URL}certificados.php?action=generate`, formData, { headers: getAuthHeaders() });
 
             if (response.data.success) {
                 // Open modal with generated PDF
@@ -123,7 +118,10 @@ const CertificadosConstancias = () => {
                 setFormData({
                     colaborador_id: '',
                     tipo_documento: 'CT',
-                    dirigido_a: ''
+                    dirigido_a: '',
+                    cargo: '',
+                    fecha_inicio: '',
+                    fecha_fin: ''
                 });
             }
         } catch (error) {
@@ -175,13 +173,10 @@ const CertificadosConstancias = () => {
     const confirmEdit = async () => {
         if (!selectedItem) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(`${API_URL}/certificados.php?action=edit`, {
+            await axios.put(`${API_URL}certificados.php?action=edit`, {
                 id: selectedItem.id,
                 dirigido_a: editDirigidoA
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            }, { headers: getAuthHeaders() });
             toast.success('Actualizado correctamente');
             fetchHistorial(page);
             closeModals();
@@ -193,10 +188,7 @@ const CertificadosConstancias = () => {
     const confirmDelete = async () => {
         if (!selectedItem) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`${API_URL}/certificados.php?action=delete&id=${selectedItem.id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.delete(`${API_URL}certificados.php?action=delete&id=${selectedItem.id}`, { headers: getAuthHeaders() });
             toast.success('Documento anulado');
             fetchHistorial(page);
             closeModals();
@@ -230,13 +222,10 @@ const CertificadosConstancias = () => {
             return;
         }
         try {
-            const token = localStorage.getItem('token');
             const form = new FormData();
             form.append('nombre', firmaNombre.trim());
             form.append('imagen', firmaFile);
-            const response = await axios.post(`${API_URL}/certificados.php?action=firmas`, form, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.post(`${API_URL}certificados.php?action=firmas`, form, { headers: getAuthHeaders() });
             if (response.data && response.data.success) {
                 toast.success('Firma registrada');
                 setShowFirmaModal(false);
@@ -254,13 +243,10 @@ const CertificadosConstancias = () => {
 
     const toggleFirmaActiva = async (firma) => {
         try {
-            const token = localStorage.getItem('token');
-            await axios.put(`${API_URL}/certificados.php?action=firmas`, {
+            await axios.put(`${API_URL}certificados.php?action=firmas`, {
                 id: firma.id,
                 activo: firma.activo ? 0 : 1
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            }, { headers: getAuthHeaders() });
             fetchFirmas();
         } catch (error) {
             toast.error('Error al actualizar firma');
@@ -270,16 +256,17 @@ const CertificadosConstancias = () => {
     const deleteFirma = async (firma) => {
         if (!window.confirm('¿Eliminar esta firma?')) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`${API_URL}/certificados.php?action=firmas&id=${firma.id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.delete(`${API_URL}certificados.php?action=firmas&id=${firma.id}`, { headers: getAuthHeaders() });
             toast.success('Firma eliminada');
             fetchFirmas();
         } catch (error) {
             toast.error('Error al eliminar firma');
         }
     };
+
+    const colaboradorSeleccionado = useMemo(() => {
+        return colaboradores.find(c => String(c.id) === String(formData.colaborador_id)) || null;
+    }, [colaboradores, formData.colaborador_id]);
 
     return (
         <div className="container mx-auto p-6 relative">
@@ -335,7 +322,7 @@ const CertificadosConstancias = () => {
                                         <div className="flex items-center gap-3">
                                             {firma.imagen_path && (
                                                 <img
-                                                    src={`${API_URL}/${firma.imagen_path.replace('../', '')}`}
+                                                    src={`${API_URL}${firma.imagen_path.replace('../', '').replace(/^\/+/, '')}`}
                                                     alt={firma.nombre}
                                                     className="w-16 h-12 object-contain border border-gray-200 rounded bg-white"
                                                 />
@@ -594,7 +581,16 @@ const CertificadosConstancias = () => {
                                         required
                                         className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         value={formData.colaborador_id}
-                                        onChange={(e) => setFormData({...formData, colaborador_id: e.target.value})}
+                                        onChange={(e) => {
+                                            const nextId = e.target.value;
+                                            const colab = colaboradores.find(c => String(c.id) === String(nextId)) || null;
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                colaborador_id: nextId,
+                                                cargo: colab?.cargo || '',
+                                                fecha_inicio: colab?.fecha_ingreso || prev.fecha_inicio || ''
+                                            }));
+                                        }}
                                     >
                                         <option value="">Seleccione un colaborador</option>
                                         {colaboradores.map(colab => (
@@ -603,6 +599,11 @@ const CertificadosConstancias = () => {
                                             </option>
                                         ))}
                                     </select>
+                                    {colaboradorSeleccionado && (
+                                        <div className="mt-2 text-xs text-gray-500">
+                                            DNI: <span className="font-semibold text-gray-700">{colaboradorSeleccionado.documento_numero || '-'}</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div>
@@ -642,6 +643,37 @@ const CertificadosConstancias = () => {
                                         value={formData.dirigido_a}
                                         onChange={(e) => setFormData({...formData, dirigido_a: e.target.value})}
                                     />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="md:col-span-2">
+                                        <label className="block text-gray-700 font-medium mb-2">Cargo</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Ej: Asistente Administrativo"
+                                            className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            value={formData.cargo}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, cargo: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-700 font-medium mb-2">Fecha inicio</label>
+                                        <input
+                                            type="date"
+                                            className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            value={formData.fecha_inicio || ''}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, fecha_inicio: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-gray-700 font-medium mb-2">Fecha fin (opcional)</label>
+                                        <input
+                                            type="date"
+                                            className="w-full border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            value={formData.fecha_fin || ''}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, fecha_fin: e.target.value }))}
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className="flex justify-end gap-3 pt-2">

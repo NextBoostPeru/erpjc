@@ -15,6 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 include_once '../config/db.php';
 require_once '../config/jwt.php';
+require_once '../config/rbac.php';
 
 // Auth Helper
 function getAuthorizationHeader(){
@@ -50,6 +51,8 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+rbac_require($conn, $userData, 'cierre_contable', $method);
 
 if ($method === 'GET') {
     $periodo = $_GET['periodo'] ?? date('Y-m');
