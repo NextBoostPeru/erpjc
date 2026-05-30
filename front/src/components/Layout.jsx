@@ -4,7 +4,7 @@ import axios from 'axios';
 import { API_URL } from '../api/config';
 import { Toaster, toast } from 'react-hot-toast';
 import Notifications from './Notifications';
-import { LogOut, LayoutDashboard, Calculator, Users, FileText, Receipt, Settings, CreditCard, Menu, X, ChevronLeft, ChevronRight, BookOpen, ShoppingCart, DollarSign, Wallet, HandCoins, Briefcase, Landmark, Contact, PieChart, Shield, Clock, Palmtree, Gift, Folder, UserMinus, UserPlus, RotateCcw, Package, BarChart3, Warehouse, ClipboardList, Truck, TrendingUp, ShoppingBag, Activity, HelpCircle, Award, Calendar, Scale, Monitor, CheckCircle, UserCheck } from 'lucide-react';
+import { LogOut, LayoutDashboard, Calculator, Users, FileText, Receipt, Settings, CreditCard, Menu, X, ChevronLeft, ChevronRight, BookOpen, ShoppingCart, DollarSign, Wallet, HandCoins, Briefcase, Landmark, Contact, PieChart, Shield, Clock, Palmtree, Gift, Folder, UserMinus, UserPlus, RotateCcw, Package, BarChart3, Warehouse, ClipboardList, Truck, TrendingUp, ShoppingBag, Activity, HelpCircle, Award, Calendar, Scale, Monitor, CheckCircle, UserCheck, Search } from 'lucide-react';
 
 const Layout = ({ children }) => {
   const navigate = useNavigate();
@@ -69,9 +69,11 @@ const Layout = ({ children }) => {
       if (m.codigo === 'gestion_almacenes' && !m.ruta) return { ...m, ruta: '/gestion-almacenes' };
       if (m.codigo === 'productos' && !m.ruta) return { ...m, ruta: '/productos' };
       if (m.codigo === 'permisos' && (!m.ruta || m.ruta === '/permisos')) return { ...m, ruta: '/gestion-permisos' };
+      if (m.codigo === 'planillas_secundarias' && !m.ruta) return { ...m, ruta: '/planillas-secundarias' };
       return m;
     });
   }, [baseModules]);
+
 
   // Filter out 'comprobantes' as per previous request
   const displayModulos = modulos.filter(modulo => modulo.codigo !== 'comprobantes');
@@ -79,6 +81,12 @@ const Layout = ({ children }) => {
   // Sidebar states
   const [isCollapsed, setIsCollapsed] = useState(true); // Default closed as requested
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [moduloSearch, setModuloSearch] = useState('');
+
+  const filteredModulos = moduloSearch.trim()
+    ? displayModulos.filter(m => m.nombre.toLowerCase().includes(moduloSearch.toLowerCase()))
+    : displayModulos;
+  
   
   const [empresa, setEmpresa] = useState({
     nombre: 'Empresa S.A.',
@@ -169,6 +177,7 @@ const Layout = ({ children }) => {
       case 'planillas': return <Calculator size={20} />;
       case 'beneficios': return <Gift size={20} />;
       case 'documentacion': return <Folder size={20} />;
+      case 'planillas_secundarias': return <DollarSign size={20} />;
       case 'file-badge': return <Award size={20} />;
       case 'certificados_constancias': return <Award size={20} />;
       case 'boletas_pago': return <Receipt size={20} />;
@@ -285,9 +294,23 @@ const Layout = ({ children }) => {
             </button>
           )}
 
-          {modulos
-            .filter(modulo => modulo.codigo !== 'comprobantes')
-            .map((modulo) => {
+          {isSidebarExpanded && (
+            <div className="relative mb-3 px-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Buscar módulo..."
+                value={moduloSearch}
+                onChange={(e) => setModuloSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none transition-all"
+              />
+            </div>
+          )}
+
+          {filteredModulos.length === 0 && moduloSearch.trim() ? (
+            <div className="text-center text-gray-400 text-sm py-6">Sin resultados</div>
+          ) : (
+            filteredModulos.map((modulo) => {
             const isActive = location.pathname.includes(modulo.ruta);
             return (
             <div 
@@ -326,7 +349,7 @@ const Layout = ({ children }) => {
               )}
             </div>
             );
-          })}
+          }))}
         </nav>
 
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">

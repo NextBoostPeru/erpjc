@@ -1,0 +1,62 @@
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'>
+                <UBLVersionID>2.1</UBLVersionID>
+                <CustomizationID>2.0</CustomizationID>
+                <ID>FFF1-321</ID>
+                <IssueDate>2026-03-30</IssueDate>
+                <IssueTime>16:45:00</IssueTime>
+                <Note languageLocaleID='1000'>215.1966</Note>
+                <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+                <Signature>
+                    <ID>IDSignKG</ID>
+                    <SignatoryParty>
+                        <PartyIdentification>
+                            <ID>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyName>
+                            <Name>CONSULTORIA GRUPO JC S.A.C.</Name>
+                        </PartyName>
+                    </SignatoryParty>
+                    <DigitalSignatureAttachment>
+                        <ExternalReference>
+                            <URI>#SignatureKG</URI>
+                        </ExternalReference>
+                    </DigitalSignatureAttachment>
+                </Signature>
+                <AccountingSupplierParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>CONSULTORIA GRUPO JC S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingSupplierParty>
+                <AccountingCustomerParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20606112514</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>COMERCIAL REFRIAIR MG S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingCustomerParty>
+                <TaxTotal>
+                    <TaxAmount currencyID='PEN'>32.8266</TaxAmount>
+                    <TaxSubtotal>
+                        <TaxableAmount currencyID='PEN'>182.37</TaxableAmount>
+                        <TaxAmount currencyID='PEN'>32.8266</TaxAmount>
+                        <TaxCategory>
+                            <TaxScheme>
+                                <ID>1000</ID>
+                                <Name>IGV</Name>
+                                <TaxTypeCode>VAT</TaxTypeCode>
+                            </TaxScheme>
+                        </TaxCategory>
+                    </TaxSubtotal>
+                </TaxTotal>
+                <LegalMonetaryTotal>
+                    <PayableAmount currencyID='PEN'>215.1966</PayableAmount>
+                </LegalMonetaryTotal>
+            </Invoice>

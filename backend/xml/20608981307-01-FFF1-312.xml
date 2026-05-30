@@ -1,0 +1,62 @@
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'>
+                <UBLVersionID>2.1</UBLVersionID>
+                <CustomizationID>2.0</CustomizationID>
+                <ID>FFF1-312</ID>
+                <IssueDate>2026-03-27</IssueDate>
+                <IssueTime>10:03:34</IssueTime>
+                <Note languageLocaleID='1000'>460.2</Note>
+                <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+                <Signature>
+                    <ID>IDSignKG</ID>
+                    <SignatoryParty>
+                        <PartyIdentification>
+                            <ID>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyName>
+                            <Name>CONSULTORIA GRUPO JC S.A.C.</Name>
+                        </PartyName>
+                    </SignatoryParty>
+                    <DigitalSignatureAttachment>
+                        <ExternalReference>
+                            <URI>#SignatureKG</URI>
+                        </ExternalReference>
+                    </DigitalSignatureAttachment>
+                </Signature>
+                <AccountingSupplierParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>CONSULTORIA GRUPO JC S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingSupplierParty>
+                <AccountingCustomerParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20563758482</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>SOCIEDAD MEDITERRANEA CERTIFICACIONES PERU S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingCustomerParty>
+                <TaxTotal>
+                    <TaxAmount currencyID='PEN'>70.2</TaxAmount>
+                    <TaxSubtotal>
+                        <TaxableAmount currencyID='PEN'>390</TaxableAmount>
+                        <TaxAmount currencyID='PEN'>70.2</TaxAmount>
+                        <TaxCategory>
+                            <TaxScheme>
+                                <ID>1000</ID>
+                                <Name>IGV</Name>
+                                <TaxTypeCode>VAT</TaxTypeCode>
+                            </TaxScheme>
+                        </TaxCategory>
+                    </TaxSubtotal>
+                </TaxTotal>
+                <LegalMonetaryTotal>
+                    <PayableAmount currencyID='PEN'>460.2</PayableAmount>
+                </LegalMonetaryTotal>
+            </Invoice>

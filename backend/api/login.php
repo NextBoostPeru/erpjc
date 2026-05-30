@@ -2,7 +2,7 @@
 include_once __DIR__ . '/../config/db.php';
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -52,6 +52,42 @@ function rbac_ensure_roles_modulos_schema(PDO $conn): void {
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
+    if (isset($conn)) $conn = null;
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $action = $_GET['action'] ?? '';
+    if ($action !== 'branding') {
+        http_response_code(400);
+        echo json_encode(["message" => "Acción inválida"]);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+
+    try {
+        $stmt = $conn->query("SELECT nombre_comercial, razon_social, logo, portada FROM empresa_datos LIMIT 1");
+        $empresa = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+        $nombre = '';
+        $logo = null;
+        $portada = null;
+        if ($empresa) {
+            $nombre = (string)($empresa['nombre_comercial'] ?: ($empresa['razon_social'] ?? ''));
+            $logo = $empresa['logo'] ?? null;
+            $portada = $empresa['portada'] ?? null;
+        }
+        echo json_encode([
+            'success' => true,
+            'empresa' => [
+                'nombre' => $nombre,
+                'logo' => $logo,
+                'portada' => $portada
+            ]
+        ]);
+    } catch (Throwable $e) {
+        http_response_code(500);
+        echo json_encode(["message" => "Error interno del servidor"]);
+    }
     if (isset($conn)) $conn = null;
     exit;
 }

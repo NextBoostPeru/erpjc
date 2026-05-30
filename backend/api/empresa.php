@@ -103,7 +103,8 @@ switch ($method) {
                         "razon_social" => $result["razon_social"] ?? "",
                         "nombre_comercial" => $result["nombre_comercial"] ?? "",
                         "domicilio_fiscal" => $result["domicilio_fiscal"] ?? "",
-                        "logo" => $result["logo"] ?? null
+                        "logo" => $result["logo"] ?? null,
+                        "portada" => $result["portada"] ?? null
                     ]);
                 }
             } else {
@@ -133,15 +134,19 @@ switch ($method) {
         }
         
         try {
+            // Ensure portada column exists
+            try { $db->exec("ALTER TABLE empresa_datos ADD COLUMN portada VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
+
             // Verificar si ya existe un registro
-            $checkQuery = "SELECT id, logo FROM empresa_datos LIMIT 1";
+            $checkQuery = "SELECT id, logo, portada FROM empresa_datos LIMIT 1";
             $checkStmt = $db->prepare($checkQuery);
             $checkStmt->execute();
             $exists = $checkStmt->fetch(PDO::FETCH_ASSOC);
 
             $logoPath = $exists['logo'] ?? null;
+            $portadaPath = $exists['portada'] ?? null;
 
-            // Handle File Upload
+            // Handle File Upload - Logo
             if ($isMultipart && isset($_FILES['logo']) && $_FILES['logo']['error'] === UPLOAD_ERR_OK) {
                 $uploadDir = __DIR__ . '/uploads/empresa/';
                 if (!is_dir($uploadDir)) {
@@ -156,11 +161,33 @@ switch ($method) {
                     $targetPath = $uploadDir . $fileName;
                     
                     if (move_uploaded_file($_FILES['logo']['tmp_name'], $targetPath)) {
-                        // Delete old logo if exists
                         if ($logoPath && file_exists(__DIR__ . '/' . $logoPath)) {
                             unlink(__DIR__ . '/' . $logoPath);
                         }
                         $logoPath = 'uploads/empresa/' . $fileName;
+                    }
+                }
+            }
+
+            // Handle File Upload - Portada
+            if ($isMultipart && isset($_FILES['portada']) && $_FILES['portada']['error'] === UPLOAD_ERR_OK) {
+                $uploadDir = __DIR__ . '/uploads/empresa/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0777, true);
+                }
+                
+                $fileExt = strtolower(pathinfo($_FILES['portada']['name'], PATHINFO_EXTENSION));
+                $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+                
+                if (in_array($fileExt, $allowed)) {
+                    $fileName = 'portada_' . time() . '.' . $fileExt;
+                    $targetPath = $uploadDir . $fileName;
+                    
+                    if (move_uploaded_file($_FILES['portada']['tmp_name'], $targetPath)) {
+                        if ($portadaPath && file_exists(__DIR__ . '/' . $portadaPath)) {
+                            unlink(__DIR__ . '/' . $portadaPath);
+                        }
+                        $portadaPath = 'uploads/empresa/' . $fileName;
                     }
                 }
             }
@@ -175,14 +202,15 @@ switch ($method) {
                           moneda_principal = :moneda,
                           anio_fiscal = :anio,
                           configuracion_sunat = :sunat,
-                          logo = :logo
+                          logo = :logo,
+                          portada = :portada
                           WHERE id = :id";
                 $stmt = $db->prepare($query);
                 $stmt->bindParam(":id", $exists['id']);
             } else {
                 // INSERT
-                $query = "INSERT INTO empresa_datos (ruc, razon_social, nombre_comercial, domicilio_fiscal, moneda_principal, anio_fiscal, configuracion_sunat, logo) 
-                          VALUES (:ruc, :razon_social, :nombre_comercial, :domicilio_fiscal, :moneda, :anio, :sunat, :logo)";
+                $query = "INSERT INTO empresa_datos (ruc, razon_social, nombre_comercial, domicilio_fiscal, moneda_principal, anio_fiscal, configuracion_sunat, logo, portada) 
+                          VALUES (:ruc, :razon_social, :nombre_comercial, :domicilio_fiscal, :moneda, :anio, :sunat, :logo, :portada)";
                 $stmt = $db->prepare($query);
             }
 
@@ -204,9 +232,10 @@ switch ($method) {
             $stmt->bindParam(":anio", $anio);
             $stmt->bindParam(":sunat", $sunatConfig);
             $stmt->bindParam(":logo", $logoPath);
+            $stmt->bindParam(":portada", $portadaPath);
 
             if ($stmt->execute()) {
-                echo json_encode(["message" => "Datos de empresa guardados correctamente", "logo" => $logoPath]);
+                echo json_encode(["message" => "Datos de empresa guardados correctamente", "logo" => $logoPath, "portada" => $portadaPath]);
             } else {
                 http_response_code(503);
                 echo json_encode(["message" => "No se pudo guardar los datos"]);

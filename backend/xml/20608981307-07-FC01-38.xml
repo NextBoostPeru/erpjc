@@ -1,0 +1,73 @@
+<CreditNote xmlns='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'>
+                <UBLVersionID>2.1</UBLVersionID>
+                <CustomizationID>2.0</CustomizationID>
+                <ID>FC01-38</ID>
+                <IssueDate>2026-03-09</IssueDate>
+                <IssueTime>10:12:10</IssueTime>
+                <Note languageLocaleID='1000'>1534</Note>
+                <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+                <DiscrepancyResponse>
+                    <ReferenceID>FFF1-248</ReferenceID>
+                    <ResponseCode>01</ResponseCode>
+                    <Description>ERROR</Description>
+                </DiscrepancyResponse>
+                <BillingReference>
+                    <InvoiceDocumentReference>
+                        <ID>FFF1-248</ID>
+                        <DocumentTypeCode>01</DocumentTypeCode>
+                    </InvoiceDocumentReference>
+                </BillingReference>
+                <Signature>
+                    <ID>IDSignKG</ID>
+                    <SignatoryParty>
+                        <PartyIdentification>
+                            <ID>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyName>
+                            <Name>CONSULTORIA GRUPO JC S.A.C.</Name>
+                        </PartyName>
+                    </SignatoryParty>
+                    <DigitalSignatureAttachment>
+                        <ExternalReference>
+                            <URI>#SignatureKG</URI>
+                        </ExternalReference>
+                    </DigitalSignatureAttachment>
+                </Signature>
+                <AccountingSupplierParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>CONSULTORIA GRUPO JC S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingSupplierParty>
+                <AccountingCustomerParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20614842131</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>GLASS TECH FACHADAS INTEGRALES E.I.R.L.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingCustomerParty>
+                <TaxTotal>
+                    <TaxAmount currencyID='PEN'>234</TaxAmount>
+                    <TaxSubtotal>
+                        <TaxableAmount currencyID='PEN'>1300</TaxableAmount>
+                        <TaxAmount currencyID='PEN'>234</TaxAmount>
+                        <TaxCategory>
+                            <TaxScheme>
+                                <ID>1000</ID>
+                                <Name>IGV</Name>
+                                <TaxTypeCode>VAT</TaxTypeCode>
+                            </TaxScheme>
+                        </TaxCategory>
+                    </TaxSubtotal>
+                </TaxTotal>
+                <LegalMonetaryTotal>
+                    <PayableAmount currencyID='PEN'>1534</PayableAmount>
+                </LegalMonetaryTotal>
+            </CreditNote>

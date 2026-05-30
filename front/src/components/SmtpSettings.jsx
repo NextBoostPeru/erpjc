@@ -28,7 +28,7 @@ const SmtpSettings = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_URL}/configuracion.php?action=get_smtp`, axiosConfig);
+      const res = await axios.get(`${API_URL}configuracion.php?action=get_smtp`, axiosConfig);
       if (res.data) {
         setSettings(prev => ({ ...prev, ...res.data }));
       }
@@ -49,7 +49,7 @@ const SmtpSettings = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      await axios.post(`${API_URL}/configuracion.php?action=save_smtp`, settings, axiosConfig);
+      await axios.post(`${API_URL}configuracion.php?action=save_smtp`, settings, axiosConfig);
       toast.success('Configuración SMTP guardada');
     } catch (error) {
       console.error(error);
@@ -66,7 +66,7 @@ const SmtpSettings = () => {
     }
     try {
       setTesting(true);
-      await axios.post(`${API_URL}/configuracion.php?action=test_smtp`, { test_email: testEmail }, axiosConfig);
+      await axios.post(`${API_URL}configuracion.php?action=test_smtp`, { test_email: testEmail }, axiosConfig);
       toast.success('Correo de prueba enviado');
     } catch (error) {
       console.error(error);

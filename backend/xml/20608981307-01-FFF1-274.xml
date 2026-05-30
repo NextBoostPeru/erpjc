@@ -1,0 +1,62 @@
+<Invoice xmlns='urn:oasis:names:specification:ubl:schema:xsd:Invoice-2'>
+                <UBLVersionID>2.1</UBLVersionID>
+                <CustomizationID>2.0</CustomizationID>
+                <ID>FFF1-274</ID>
+                <IssueDate>2026-03-16</IssueDate>
+                <IssueTime>10:28:39</IssueTime>
+                <Note languageLocaleID='1000'>891.5844</Note>
+                <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+                <Signature>
+                    <ID>IDSignKG</ID>
+                    <SignatoryParty>
+                        <PartyIdentification>
+                            <ID>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyName>
+                            <Name>CONSULTORIA GRUPO JC S.A.C.</Name>
+                        </PartyName>
+                    </SignatoryParty>
+                    <DigitalSignatureAttachment>
+                        <ExternalReference>
+                            <URI>#SignatureKG</URI>
+                        </ExternalReference>
+                    </DigitalSignatureAttachment>
+                </Signature>
+                <AccountingSupplierParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>CONSULTORIA GRUPO JC S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingSupplierParty>
+                <AccountingCustomerParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20614256487</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>CORPORACION INMOBILIARIA MONACO S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingCustomerParty>
+                <TaxTotal>
+                    <TaxAmount currencyID='PEN'>136.0044</TaxAmount>
+                    <TaxSubtotal>
+                        <TaxableAmount currencyID='PEN'>755.58</TaxableAmount>
+                        <TaxAmount currencyID='PEN'>136.0044</TaxAmount>
+                        <TaxCategory>
+                            <TaxScheme>
+                                <ID>1000</ID>
+                                <Name>IGV</Name>
+                                <TaxTypeCode>VAT</TaxTypeCode>
+                            </TaxScheme>
+                        </TaxCategory>
+                    </TaxSubtotal>
+                </TaxTotal>
+                <LegalMonetaryTotal>
+                    <PayableAmount currencyID='PEN'>891.5844</PayableAmount>
+                </LegalMonetaryTotal>
+            </Invoice>

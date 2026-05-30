@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f4f6f9;
+  color: #111827;
+}
+
+@keyframes kioskPopIn {
+  0% { transform: scale(0.96); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes kioskFadeUp {
+  0% { transform: translateY(8px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes kioskShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes kioskSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes kioskPulseRing {
+  0% { transform: scale(0.75); opacity: 0.55; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+@keyframes kioskConfirmProgress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.kiosk-pop-in { animation: kioskPopIn 180ms ease-out both; }
+.kiosk-fade-up { animation: kioskFadeUp 220ms ease-out both; }
+.kiosk-shake { animation: kioskShake 320ms ease-in-out both; }
+.kiosk-spin { animation: kioskSpin 900ms linear infinite; }
+
+.kiosk-pulse-ring {
+  background: rgba(16, 185, 129, 0.18);
+  animation: kioskPulseRing 520ms ease-out both;
+}
+
+.kiosk-confirm-progress {
+  transform-origin: left center;
+  animation: kioskConfirmProgress 1200ms linear both;
+}
+
+.kiosk-check path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: kioskDraw 520ms ease-out forwards;
+}
+
+@keyframes kioskDraw {
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kiosk-pop-in,
+  .kiosk-fade-up,
+  .kiosk-shake,
+  .kiosk-spin,
+  .kiosk-pulse-ring,
+  .kiosk-confirm-progress {
+    animation: none !important;
+  }
+  .kiosk-check path {
+    animation: none !important;
+    stroke-dashoffset: 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}

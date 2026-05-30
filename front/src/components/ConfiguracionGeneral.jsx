@@ -26,6 +26,7 @@ const ConfiguracionGeneral = () => {
     ruc: '', razon_social: '', nombre_comercial: '', domicilio_fiscal: '',
     moneda_principal: 'PEN', anio_fiscal: new Date().getFullYear(),
     logo: '', // Add logo path state
+    portada: '', // Add portada path state
     configuracion_sunat: { 
         sol_user: '', sol_pass: '', client_id: '', client_secret: '', certificado_path: '',
         nubefact_ruta: '', nubefact_token: '',
@@ -34,6 +35,7 @@ const ConfiguracionGeneral = () => {
   });
 
   const [logoFile, setLogoFile] = useState(null); // State for the file to upload
+  const [portadaFile, setPortadaFile] = useState(null); // State for the portada file to upload
 
   const [sedesList, setSedesList] = useState([]);
   const [showSedeModal, setShowSedeModal] = useState(false);
@@ -123,6 +125,9 @@ const ConfiguracionGeneral = () => {
     if (logoFile) {
         formData.append('logo', logoFile);
     }
+    if (portadaFile) {
+        formData.append('portada', portadaFile);
+    }
 
     const promise = axios.post(`${API_URL}empresa.php`, formData, {
         ...axiosConfig,
@@ -142,6 +147,10 @@ const ConfiguracionGeneral = () => {
         if (res.data.logo) {
              setEmpresaData(prev => ({ ...prev, logo: res.data.logo }));
              setLogoFile(null); // Reset file input
+        }
+        if (res.data.portada) {
+             setEmpresaData(prev => ({ ...prev, portada: res.data.portada }));
+             setPortadaFile(null);
         }
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -393,7 +402,7 @@ const ConfiguracionGeneral = () => {
             <div className="p-6">{children}</div>
         </div>
     </div>
-  );
+);
 
   const ConfirmationDialog = () => {
     if (!confirmModal.isOpen) return null;
@@ -551,6 +560,23 @@ const ConfiguracionGeneral = () => {
                                     accept="image/*"
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                     onChange={e => setLogoFile(e.target.files[0])}
+                                />
+                            </div>
+                        </div>
+                         {/* Portada Upload */}
+                         <div className="space-y-2 md:col-span-2">
+                            <label className="text-sm font-medium text-gray-700">Imagen de Portada (fondo del login)</label>
+                            <div className="flex items-center gap-4">
+                                {empresaData.portada && (
+                                    <div className="w-32 h-20 border rounded overflow-hidden">
+                                        <img src={`${API_URL}public_files.php?path=${encodeURIComponent(empresaData.portada)}`} alt="Portada" className="w-full h-full object-cover" />
+                                    </div>
+                                )}
+                                <input 
+                                    type="file" 
+                                    accept="image/*"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    onChange={e => setPortadaFile(e.target.files[0])}
                                 />
                             </div>
                         </div>

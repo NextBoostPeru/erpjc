@@ -80,9 +80,12 @@ const OrdenesTrabajo = () => {
 
   useEffect(() => {
     fetchOrdenes();
+  }, [filters]);
+
+  useEffect(() => {
     fetchAreas();
     fetchUsuarios();
-  }, [filters]);
+  }, []);
 
   // Click outside to close dropdown
   useEffect(() => {

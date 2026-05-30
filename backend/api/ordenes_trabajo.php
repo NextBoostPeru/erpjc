@@ -1,4 +1,5 @@
 <?php
+header('Content-Type: application/json');
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/jwt.php';
 require_once __DIR__ . '/../config/rbac.php';
@@ -58,6 +59,14 @@ if ($method === 'GET') {
     }
 } elseif ($method === 'POST') {
     $data = inputJson();
+    $required = ['titulo', 'fecha'];
+    foreach ($required as $field) {
+        if (empty($data[$field])) {
+            http_response_code(400);
+            echo json_encode(['error' => "Campo requerido: $field"]);
+            exit;
+        }
+    }
     try {
         $conn->beginTransaction();
         $codigo = $data['codigo'] ?? null;
@@ -110,7 +119,7 @@ if ($method === 'GET') {
         $conn->commit();
         echo json_encode(['success' => true, 'id' => $orden_id, 'codigo' => $codigo]);
     } catch (Exception $e) {
-        $conn->rollBack();
+        if ($conn->inTransaction()) $conn->rollBack();
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);
     }
@@ -127,6 +136,12 @@ if ($method === 'GET') {
     try {
         if ($action === 'cambiar_estado') {
             $estado = $data['estado'] ?? null;
+            $validEstados = ['Abierta', 'En proceso', 'Completada', 'Cancelada'];
+            if (!$estado || !in_array($estado, $validEstados)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Estado no válido']);
+                exit;
+            }
             $stmt = $conn->prepare("UPDATE ordenes_trabajo SET estado = ? WHERE id = ?");
             $stmt->execute([$estado, $id]);
             echo json_encode(['success' => true]);
@@ -222,7 +237,7 @@ if ($method === 'GET') {
         $conn->commit();
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
-        $conn->rollBack();
+        if ($conn->inTransaction()) $conn->rollBack();
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);
     }

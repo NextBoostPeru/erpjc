@@ -40,6 +40,7 @@ try {
             id INT AUTO_INCREMENT PRIMARY KEY,
             orden_id INT NOT NULL,
             descripcion TEXT NOT NULL,
+            detalles TEXT NULL,
             encargado_id INT NULL,
             fecha_limite DATE NULL,
             estado ENUM('Pendiente','En proceso','Hecha','Cancelada') DEFAULT 'Pendiente',

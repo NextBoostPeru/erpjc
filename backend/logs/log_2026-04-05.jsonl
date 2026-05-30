@@ -1,0 +1,3 @@
+{"id":"log_69d28fb9407451.16423437","usuario_id":"7","usuario_nombre":"gerente","accion":"POST","modulo":"ISO_PDF","descripcion":"Consulta a \/api\/iso_pdf.php?type=report_builder","ip_address":"181.67.60.176","fecha":"2026-04-05 11:37:13"}
+{"id":"log_69d2912855c6a4.19764658","usuario_id":"7","usuario_nombre":"gerente","accion":"POST","modulo":"GESTION","descripcion":"Consulta a \/api\/gestion.php?action=create_coordinacion","ip_address":"201.230.249.156","fecha":"2026-04-05 11:43:20"}
+{"id":"log_69d2916d229ae5.23107549","usuario_id":"7","usuario_nombre":"gerente","accion":"POST","modulo":"ISO","descripcion":"Consulta a \/api\/iso.php?action=create_coordinacion","ip_address":"201.230.249.156","fecha":"2026-04-05 11:44:29"}

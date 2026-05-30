@@ -594,16 +594,36 @@ const Alquileres = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 items-end">
                   <div className="sm:col-span-2 md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700">{form.tipo === 'andamio' ? 'Componente de andamio' : 'Detalle'}</label>
-                    <input
-                      type="text"
-                      value={detalleTemp.descripcion || ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setDetalleTemp(prev => ({ ...prev, descripcion: val, producto_id: '' }));
-                      }}
-                      placeholder={form.tipo === 'andamio' ? 'Escribir componente' : 'Escribir detalle'}
-                      className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"
-                    />
+                    {form.tipo === 'andamio' ? (
+                      <select
+                        value={detalleTemp.producto_id}
+                        onChange={e => {
+                          const prod = productos.find(p => p.id == e.target.value);
+                          setDetalleTemp(prev => ({
+                            ...prev,
+                            producto_id: e.target.value,
+                            descripcion: prod ? prod.nombre : ''
+                          }));
+                        }}
+                        className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"
+                      >
+                        <option value="">Seleccione componente...</option>
+                        {productos.map(p => (
+                          <option key={p.id} value={p.id}>{p.nombre} (Stock: {p.stock})</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={detalleTemp.descripcion || ''}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setDetalleTemp(prev => ({ ...prev, descripcion: val, producto_id: '' }));
+                        }}
+                        placeholder="Escribir detalle"
+                        className="mt-1 w-full border rounded-lg px-3 py-2 text-sm md:text-base"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Cantidad</label>
@@ -626,7 +646,7 @@ const Alquileres = () => {
                       {form.detalles.map((d, idx) => (
                         <div key={idx} className="flex items-center justify-between border rounded-lg p-2">
                           <div className="text-sm text-gray-700">
-                            {form.tipo === 'andamio' ? `Producto #${d.producto_id}` : d.descripcion} • Cant: {d.cantidad} • Tarifa: {d.tarifa_diaria}
+                            {d.descripcion || `Producto #${d.producto_id}`} • Cant: {d.cantidad} • Tarifa: {d.tarifa_diaria}
                           </div>
                           <button type="button" onClick={() => removeDetalle(idx)} className="text-red-600 hover:text-red-800 p-1">
                             <X size={16}/>

@@ -26,35 +26,37 @@ if (!$userData) {
 $method = $_SERVER['REQUEST_METHOD'];
 rbac_require($conn, $userData, 'configuracion', $method);
 
-// Check if admin
-$stmtRole = $conn->prepare("SELECT nombre FROM roles WHERE id = ?");
-$stmtRole->execute([$userData->rol_id]);
-$roleName = $stmtRole->fetchColumn();
-
-if ($roleName !== 'admin') {
-    http_response_code(403);
-    echo json_encode(["message" => "Acceso denegado. Se requieren permisos de administrador."]);
-    if (isset($conn)) $conn = null;
-    exit;
-}
-
 $action = $_GET['action'] ?? '';
+
+// Ensure system_settings table exists
+try {
+    $conn->exec("CREATE TABLE IF NOT EXISTS system_settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        setting_key VARCHAR(50) NOT NULL UNIQUE,
+        setting_value TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )");
+} catch (Exception $e) {}
 
 switch ($action) {
     case 'get_smtp':
-        $smtpKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure', 'smtp_from_email', 'smtp_from_name'];
-        $settings = [];
-        
-        $placeholders = implode(',', array_fill(0, count($smtpKeys), '?'));
-        $stmt = $conn->prepare("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ($placeholders)");
-        $stmt->execute($smtpKeys);
-        $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-        
-        foreach ($smtpKeys as $key) {
-            $settings[$key] = $rows[$key] ?? '';
+        try {
+            $smtpKeys = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_secure', 'smtp_from_email', 'smtp_from_name'];
+            $settings = [];
+            
+            $placeholders = implode(',', array_fill(0, count($smtpKeys), '?'));
+            $stmt = $conn->prepare("SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN ($placeholders)");
+            $stmt->execute($smtpKeys);
+            $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+            
+            foreach ($smtpKeys as $key) {
+                $settings[$key] = $rows[$key] ?? '';
+            }
+            
+            echo json_encode($settings);
+        } catch (Exception $e) {
+            echo json_encode(['smtp_host' => '', 'smtp_port' => '587', 'smtp_user' => '', 'smtp_pass' => '', 'smtp_secure' => 'tls', 'smtp_from_email' => '', 'smtp_from_name' => '']);
         }
-        
-        echo json_encode($settings);
         break;
 
     case 'save_smtp':

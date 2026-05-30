@@ -12,24 +12,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 include_once '../config/db.php';
 require_once '../config/jwt.php';
 
-$jwt = new JWTHandler();
-$token = $jwt->getBearerToken();
-$user_data = $jwt->validateToken($token);
-
-if (!$user_data) {
-    http_response_code(401);
-    echo json_encode(['error' => 'Token inválido']);
-    if (isset($conn)) $conn = null;
-    exit;
+// --- Kiosk key validation (bypass JWT for marcador kiosk) ---
+$isKiosk = isset($_GET['kiosk']) && $_GET['kiosk'] === '1';
+$kioskKeyValid = false;
+if ($isKiosk) {
+    $cfgStmt = $conn->query("SELECT configuracion_sunat FROM empresa_datos LIMIT 1");
+    $cfgRow = $cfgStmt->fetch(PDO::FETCH_ASSOC);
+    $cfg = [];
+    if ($cfgRow && !empty($cfgRow['configuracion_sunat'])) {
+        $cfg = json_decode($cfgRow['configuracion_sunat'], true);
+        if (json_last_error() !== JSON_ERROR_NONE) $cfg = [];
+    }
+    $storedKey = isset($cfg['kiosk_key']) ? trim((string)$cfg['kiosk_key']) : '';
+    $headerKey = isset($_SERVER['HTTP_X_KIOSK_KEY']) ? trim($_SERVER['HTTP_X_KIOSK_KEY']) : '';
+    $kioskKeyValid = $storedKey !== '' && $headerKey !== '' && hash_equals($storedKey, $headerKey);
 }
+
+if (!$kioskKeyValid) {
+    $jwt = new JWTHandler();
+    $token = $jwt->getBearerToken();
+    $user_data = $jwt->validateToken($token);
+
+    if (!$user_data) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Token inválido']);
+        if (isset($conn)) $conn = null;
+        exit;
+    }
+}
+
+// --- Ensure geo columns exist (lat, lng, accuracy, device_id) ---
+try {
+    $conn->exec("ALTER TABLE asistencias ADD COLUMN lat DECIMAL(10,7) DEFAULT NULL");
+} catch (Exception $e) { /* column already exists */ }
+try {
+    $conn->exec("ALTER TABLE asistencias ADD COLUMN lng DECIMAL(10,7) DEFAULT NULL");
+} catch (Exception $e) { /* column already exists */ }
+try {
+    $conn->exec("ALTER TABLE asistencias ADD COLUMN accuracy DECIMAL(10,2) DEFAULT NULL");
+} catch (Exception $e) { /* column already exists */ }
+try {
+    $conn->exec("ALTER TABLE asistencias ADD COLUMN device_id VARCHAR(100) DEFAULT NULL");
+} catch (Exception $e) { /* column already exists */ }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     switch ($method) {
         case 'GET':
-            // Reports vs List
-            if (isset($_GET['report']) && $_GET['report'] === 'monthly') {
+            if ($isKiosk && isset($_GET['action']) && $_GET['action'] === 'lookup') {
+                handleKioskLookup($conn);
+            } elseif (isset($_GET['report']) && $_GET['report'] === 'monthly') {
                 handleMonthlyReport($conn);
             } else {
                 handleList($conn);
@@ -37,7 +70,9 @@ try {
             break;
 
         case 'POST':
-            if (isset($_GET['import']) && $_GET['import'] === 'true') {
+            if ($isKiosk && isset($_GET['action']) && $_GET['action'] === 'marcar') {
+                handleKioskMarcar($conn);
+            } elseif (isset($_GET['import']) && $_GET['import'] === 'true') {
                 handleImport($conn);
             } elseif (isset($_GET['bulk']) && $_GET['bulk'] === 'true') {
                 handleBulkSave($conn);
@@ -170,8 +205,14 @@ function handleCreate($conn) {
         $turno_id = $colab['turno_id'];
     }
 
-    $sql = "INSERT INTO asistencias (colaborador_id, fecha, hora_entrada, hora_salida, horas_trabajadas, horas_extras, metodo, estado, observaciones, turno_id) 
-            VALUES (:cid, :fecha, :he, :hs, :ht, :hex, 'Manual', :estado, :obs, :turno_id)";
+    $lat = isset($data->lat) ? (float)$data->lat : null;
+    $lng = isset($data->lng) ? (float)$data->lng : null;
+    $accuracy = isset($data->accuracy) ? (float)$data->accuracy : null;
+    $deviceId = isset($data->device_id) ? trim($data->device_id) : null;
+    $metodo = isset($data->metodo) ? $data->metodo : 'Manual';
+
+    $sql = "INSERT INTO asistencias (colaborador_id, fecha, hora_entrada, hora_salida, horas_trabajadas, horas_extras, metodo, estado, observaciones, turno_id, lat, lng, accuracy, device_id) 
+            VALUES (:cid, :fecha, :he, :hs, :ht, :hex, :metodo, :estado, :obs, :turno_id, :lat, :lng, :acc, :dev)";
     
     $stmt = $conn->prepare($sql);
     $stmt->execute([
@@ -181,9 +222,14 @@ function handleCreate($conn) {
         ':hs' => $hora_salida,
         ':ht' => $hours['worked'],
         ':hex' => $hours['overtime'],
+        ':metodo' => $metodo,
         ':estado' => $estado,
         ':obs' => $data->observaciones ?? '',
-        ':turno_id' => $turno_id
+        ':turno_id' => $turno_id,
+        ':lat' => $lat,
+        ':lng' => $lng,
+        ':acc' => $accuracy,
+        ':dev' => $deviceId
     ]);
 
     echo json_encode(["message" => "Asistencia registrada"]);
@@ -510,5 +556,85 @@ function calculateHours($in, $out) {
     if ($overtime > 16) $overtime = 16.0;
 
     return ['worked' => $worked, 'overtime' => round($overtime, 2)];
+}
+
+function handleKioskLookup($conn) {
+    $dni = isset($_GET['dni']) ? trim($_GET['dni']) : '';
+    if (!preg_match('/^\d{8}$/', $dni)) {
+        echo json_encode(['colaborador' => null, 'message' => 'DNI inválido']);
+        return;
+    }
+    $stmt = $conn->prepare("SELECT id, nombres, apellidos, documento_numero FROM colaboradores WHERE documento_numero = ? AND estado = 'Activo' LIMIT 1");
+    $stmt->execute([$dni]);
+    $colab = $stmt->fetch(PDO::FETCH_ASSOC);
+    echo json_encode(['colaborador' => $colab ?: null]);
+}
+
+function handleKioskMarcar($conn) {
+    $data = json_decode(file_get_contents("php://input"));
+    if (!$data || empty($data->dni)) {
+        http_response_code(400);
+        echo json_encode(['message' => 'DNI requerido']);
+        return;
+    }
+    $dni = trim($data->dni);
+    if (!preg_match('/^\d{8}$/', $dni)) {
+        http_response_code(400);
+        echo json_encode(['message' => 'DNI inválido']);
+        return;
+    }
+
+    $stmt = $conn->prepare("SELECT id, nombres, apellidos FROM colaboradores WHERE documento_numero = ? AND estado = 'Activo' LIMIT 1");
+    $stmt->execute([$dni]);
+    $colab = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$colab) {
+        http_response_code(404);
+        echo json_encode(['message' => 'Colaborador no encontrado']);
+        return;
+    }
+    $colabId = (int)$colab['id'];
+
+    $today = date('Y-m-d');
+    $nowTime = date('H:i:s');
+
+    // Check if there's already an entrada without salida today
+    $stmtCheck = $conn->prepare("SELECT id, hora_entrada, hora_salida FROM asistencias WHERE colaborador_id = ? AND fecha = ? ORDER BY id DESC LIMIT 1");
+    $stmtCheck->execute([$colabId, $today]);
+    $existing = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+    $lat = isset($data->lat) ? (float)$data->lat : null;
+    $lng = isset($data->lng) ? (float)$data->lng : null;
+    $accuracy = isset($data->accuracy) ? (float)$data->accuracy : null;
+    $deviceId = isset($data->device_id) ? trim($data->device_id) : null;
+
+    if ($existing && empty($existing['hora_salida'])) {
+        // Already clocked in but no clock-out → registrar salida
+        $hours = calculateHours($existing['hora_entrada'], $nowTime);
+        $stmtUpd = $conn->prepare("UPDATE asistencias SET hora_salida = :hs, horas_trabajadas = :ht, horas_extras = :hex, metodo = 'Kiosk', lat = :lat, lng = :lng, accuracy = :acc, device_id = :dev WHERE id = :id");
+        $stmtUpd->execute([
+            ':hs' => $nowTime,
+            ':ht' => $hours['worked'],
+            ':hex' => $hours['overtime'],
+            ':lat' => $lat,
+            ':lng' => $lng,
+            ':acc' => $accuracy,
+            ':dev' => $deviceId,
+            ':id' => $existing['id']
+        ]);
+        echo json_encode(['tipo' => 'Salida', 'fecha' => $today, 'hora' => $nowTime, 'message' => 'Salida registrada correctamente.']);
+    } else {
+        // No clock-in today or already has clock-out → registrar nueva entrada
+        $stmtIns = $conn->prepare("INSERT INTO asistencias (colaborador_id, fecha, hora_entrada, horas_trabajadas, metodo, estado, lat, lng, accuracy, device_id) VALUES (:cid, :fecha, :he, 0, 'Kiosk', 'Pendiente', :lat, :lng, :acc, :dev)");
+        $stmtIns->execute([
+            ':cid' => $colabId,
+            ':fecha' => $today,
+            ':he' => $nowTime,
+            ':lat' => $lat,
+            ':lng' => $lng,
+            ':acc' => $accuracy,
+            ':dev' => $deviceId
+        ]);
+        echo json_encode(['tipo' => 'Entrada', 'fecha' => $today, 'hora' => $nowTime, 'message' => 'Entrada registrada correctamente.']);
+    }
 }
 ?>

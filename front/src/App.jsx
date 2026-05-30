@@ -33,6 +33,7 @@ import GestionContratos from './components/GestionContratos';
 import ControlAsistencia from './components/ControlAsistencia';
 import VacacionesPermisos from './components/VacacionesPermisos';
 import GestionPlanillas from './components/GestionPlanillas';
+import GestionPlanillasSecundarias from './components/GestionPlanillasSecundarias';
 import BeneficiosCompensaciones from './components/BeneficiosCompensaciones';
 import DocumentacionLaboral from './components/DocumentacionLaboral';
 import CertificadosConstancias from './components/CertificadosConstancias';
@@ -74,6 +75,9 @@ import GestionISO from './components/GestionISO';
 import GestionRetenciones from './components/GestionRetenciones';
 import GestionCoordinaciones from './components/GestionCoordinaciones';
 import Alquileres from './components/Alquileres';
+import Drive from './components/Drive';
+import CalendarioRRSS from './components/CalendarioRRSS';
+import GA4Analytics from './components/GA4Analytics';
 
 // Componente para interceptar respuestas 401 y añadir token
 const AxiosInterceptor = () => {
@@ -260,6 +264,12 @@ function App() {
         <Route path="/planillas" element={
           <PrivateRoute>
             <GestionPlanillas />
+          </PrivateRoute>
+        } />
+
+        <Route path="/planillas-secundarias" element={
+          <PrivateRoute>
+            <GestionPlanillasSecundarias />
           </PrivateRoute>
         } />
 
@@ -591,6 +601,24 @@ function App() {
         <Route path="/alquileres" element={
           <PrivateRoute>
             <Alquileres />
+          </PrivateRoute>
+        } />
+
+        <Route path="/drive" element={
+          <PrivateRoute>
+            <Drive />
+          </PrivateRoute>
+        } />
+
+        <Route path="/calendario-rrss" element={
+          <PrivateRoute>
+            <CalendarioRRSS />
+          </PrivateRoute>
+        } />
+
+        <Route path="/ga4-analytics" element={
+          <PrivateRoute>
+            <GA4Analytics />
           </PrivateRoute>
         } />
 

@@ -1,0 +1,73 @@
+<CreditNote xmlns='urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2'>
+                <UBLVersionID>2.1</UBLVersionID>
+                <CustomizationID>2.0</CustomizationID>
+                <ID>FC01-54</ID>
+                <IssueDate>2026-04-01</IssueDate>
+                <IssueTime>17:53:08</IssueTime>
+                <Note languageLocaleID='1000'>708</Note>
+                <DocumentCurrencyCode>PEN</DocumentCurrencyCode>
+                <DiscrepancyResponse>
+                    <ReferenceID>FFF1-339</ReferenceID>
+                    <ResponseCode>01</ResponseCode>
+                    <Description>Err</Description>
+                </DiscrepancyResponse>
+                <BillingReference>
+                    <InvoiceDocumentReference>
+                        <ID>FFF1-339</ID>
+                        <DocumentTypeCode>01</DocumentTypeCode>
+                    </InvoiceDocumentReference>
+                </BillingReference>
+                <Signature>
+                    <ID>IDSignKG</ID>
+                    <SignatoryParty>
+                        <PartyIdentification>
+                            <ID>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyName>
+                            <Name>CONSULTORIA GRUPO JC S.A.C.</Name>
+                        </PartyName>
+                    </SignatoryParty>
+                    <DigitalSignatureAttachment>
+                        <ExternalReference>
+                            <URI>#SignatureKG</URI>
+                        </ExternalReference>
+                    </DigitalSignatureAttachment>
+                </Signature>
+                <AccountingSupplierParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20608981307</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>CONSULTORIA GRUPO JC S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingSupplierParty>
+                <AccountingCustomerParty>
+                    <Party>
+                        <PartyIdentification>
+                            <ID schemeID='6'>20604097151</ID>
+                        </PartyIdentification>
+                        <PartyLegalEntity>
+                            <RegistrationName>ROYAL INGENIEROS CONSTRUCTORES S.A.C.</RegistrationName>
+                        </PartyLegalEntity>
+                    </Party>
+                </AccountingCustomerParty>
+                <TaxTotal>
+                    <TaxAmount currencyID='PEN'>108</TaxAmount>
+                    <TaxSubtotal>
+                        <TaxableAmount currencyID='PEN'>600</TaxableAmount>
+                        <TaxAmount currencyID='PEN'>108</TaxAmount>
+                        <TaxCategory>
+                            <TaxScheme>
+                                <ID>1000</ID>
+                                <Name>IGV</Name>
+                                <TaxTypeCode>VAT</TaxTypeCode>
+                            </TaxScheme>
+                        </TaxCategory>
+                    </TaxSubtotal>
+                </TaxTotal>
+                <LegalMonetaryTotal>
+                    <PayableAmount currencyID='PEN'>708</PayableAmount>
+                </LegalMonetaryTotal>
+            </CreditNote>

@@ -115,8 +115,9 @@ try {
                     $df = new DateTime($r['fecha_fin']);
                     $days = $di->diff($df)->days + 1;
                     $r['dias'] = $days;
-                    $rem = (new DateTime())->diff($df)->days;
-                    $r['dias_restantes'] = ($df >= new DateTime(date('Y-m-d'))) ? $rem : 0;
+                    $today = new DateTime(date('Y-m-d'));
+                    $rem = $today->diff($df)->days;
+                    $r['dias_restantes'] = ($df >= $today) ? $rem : 0;
                     $r['detalles'] = $detMap[$r['id']] ?? [];
                 }
             }
@@ -167,6 +168,14 @@ try {
     } elseif ($method === 'POST') {
         if ($action === 'crear') {
             $data = json_decode(file_get_contents("php://input"), true);
+            $required = ['cliente_num_doc', 'cliente_razon_social', 'tipo', 'fecha_inicio', 'fecha_fin'];
+            foreach ($required as $field) {
+                if (empty($data[$field])) {
+                    http_response_code(400);
+                    echo json_encode(['message' => "Campo requerido: $field"]);
+                    exit;
+                }
+            }
             $conn->beginTransaction();
             try {
                 $stmt = $conn->prepare("INSERT INTO alquileres (cliente_tipo_doc, cliente_num_doc, cliente_razon_social, tipo, fecha_inicio, fecha_fin, almacen_id, estado, alert_days, observaciones) VALUES (:ctipo, :cnum, :crazon, :tipo, :inicio, :fin, :almacen, 'Activo', :alert, :obs)");
@@ -306,7 +315,39 @@ try {
                 echo json_encode(['message' => 'ID requerido']);
                 exit;
             }
+            $conn->beginTransaction();
             try {
+                $stmtOld = $conn->prepare("SELECT * FROM alquileres WHERE id = ?");
+                $stmtOld->execute([$id]);
+                $oldAlq = $stmtOld->fetch(PDO::FETCH_ASSOC);
+
+                if ($oldAlq && $oldAlq['tipo'] === 'andamio' && !empty($oldAlq['almacen_id'])) {
+                    $stmtOldDet = $conn->prepare("SELECT * FROM alquileres_detalle WHERE alquiler_id = ?");
+                    $stmtOldDet->execute([$id]);
+                    $oldItems = $stmtOldDet->fetchAll(PDO::FETCH_ASSOC);
+                    $itemsMov = [];
+                    foreach ($oldItems as $d) {
+                        if (!empty($d['producto_id']) && (int)$d['cantidad'] > 0) {
+                            $itemsMov[] = [
+                                'producto_id' => (int)$d['producto_id'],
+                                'cantidad' => (int)$d['cantidad'],
+                                'costo_unitario' => 0
+                            ];
+                        }
+                    }
+                    if (!empty($itemsMov)) {
+                        $stockHelper = new StockHelper($conn);
+                        $stockHelper->registrarMovimiento([
+                            'almacen_id' => (int)$oldAlq['almacen_id'],
+                            'usuario_id' => (int)$userData->id,
+                            'motivo' => 'alquiler retorno',
+                            'tipo' => 'entrada',
+                            'items' => $itemsMov,
+                            'documento_referencia' => 'ALQ-EDT-RET-' . $id
+                        ]);
+                    }
+                }
+
                 $stmt = $conn->prepare("UPDATE alquileres SET cliente_tipo_doc = :ctipo, cliente_num_doc = :cnum, cliente_razon_social = :crazon, tipo = :tipo, fecha_inicio = :inicio, fecha_fin = :fin, almacen_id = :almacen, alert_days = :alert, observaciones = :obs WHERE id = :id");
                 $stmt->execute([
                     ':ctipo' => $data['cliente_tipo_doc'] ?? '6',
@@ -320,8 +361,50 @@ try {
                     ':obs' => $data['observaciones'] ?? null,
                     ':id' => $id
                 ]);
+
+                $conn->prepare("DELETE FROM alquileres_detalle WHERE alquiler_id = ?")->execute([$id]);
+                if (isset($data['detalles']) && is_array($data['detalles'])) {
+                    $stmtDet = $conn->prepare("INSERT INTO alquileres_detalle (alquiler_id, item_tipo, producto_id, descripcion, cantidad, tarifa_diaria) VALUES (:aid, :itipo, :pid, :desc, :cant, :tarifa)");
+                    foreach ($data['detalles'] as $d) {
+                        $stmtDet->execute([
+                            ':aid' => $id,
+                            ':itipo' => $d['item_tipo'] ?? $data['tipo'],
+                            ':pid' => $d['producto_id'] ?? null,
+                            ':desc' => $d['descripcion'] ?? null,
+                            ':cant' => $d['cantidad'],
+                            ':tarifa' => $d['tarifa_diaria'] ?? 0
+                        ]);
+                    }
+                }
+
+                if ($data['tipo'] === 'andamio' && !empty($data['almacen_id'])) {
+                    $itemsMov = [];
+                    foreach ($data['detalles'] as $d) {
+                        if (!empty($d['producto_id']) && (int)$d['cantidad'] > 0) {
+                            $itemsMov[] = [
+                                'producto_id' => (int)$d['producto_id'],
+                                'cantidad' => (int)$d['cantidad'],
+                                'costo_unitario' => 0
+                            ];
+                        }
+                    }
+                    if (!empty($itemsMov)) {
+                        $stockHelper = new StockHelper($conn);
+                        $stockHelper->registrarMovimiento([
+                            'almacen_id' => (int)$data['almacen_id'],
+                            'usuario_id' => (int)$userData->id,
+                            'motivo' => 'alquiler',
+                            'tipo' => 'salida',
+                            'items' => $itemsMov,
+                            'documento_referencia' => 'ALQ-' . $id
+                        ]);
+                    }
+                }
+
+                $conn->commit();
                 echo json_encode(['message' => 'Alquiler actualizado']);
             } catch (Exception $e) {
+                if ($conn->inTransaction()) $conn->rollBack();
                 http_response_code(500);
                 echo json_encode(['message' => 'Error: ' . $e->getMessage()]);
             }
